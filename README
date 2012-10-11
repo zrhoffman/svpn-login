@@ -24,60 +24,13 @@ To run:
 (user@host is saved for future invocations, so doesn't need to be
 specified on future invocations)
 
-This software is licensed under GPLv3+.
-
 Have fun,
 James Y Knight, <foom@fuhm.net>
 
 ChangeLog
 ---------
-2010-10-15
- - Fix "OverrideGateway0" on non-darwin platforms: on those, pppd cowardly
-   refuses to replace an existing default route. Reported by Bob Whitinger.
- - Support comma-delimited DNSSuffix0 in addition to the standard
-   space-delimited. (Reported by Dave Cadwallader)
-
-2010-09-02
- - Now checks the server's certificate, when running on python 2.6 and if it can
-   find the CA certificates list, which is *oh so conveniently* located in a
-   different place on every OS. You can disable with --dont-check-certificates.
-   - Yup, and check the certificate's hostname too, even though Python didn't
-     feel it necessary to include a function for doing this in a convenient fashion.
-   - Oh, and it can also verify certificates on OSX, even though Apple and
-     Python conspired mightily to attempt to make this as difficult as
-     possible...
-
-2010-08-10
- - Oops, fix stupid bug.
-
-2010-07-30
- - For linux, use the "$net netmask $mask" syntax instead of "$net/$bits" for
-   giving the netmask to route. It seems that all versions support the former,
-   but some older versions (such as CentOS 4) didn't support the latter (and
-   people still use it!).
-
-2010-07-06
- - Handle servers which don't send a DNSSuffix0 (reported by Logu)
-
-2010-03-15
- - Escape username and passwords when sending to server, so that non-alpha
-   characters work properly. (Thanks anonymous forum post I found via
-   google...BTW, my email address is right up there to report bugs to...)
- - Prefer /usr/local/bin to /usr/bin, for BSDs which have multiple copies of
-   pppd, only the /usr/local of which works..
-
-2009-12-24
- - New platform support: FreeBSD, and inspiration for random cleanups by George Mitchell
- - Add &no_inspectors=1 to request in get_vpn_client_data, from Geert Jan van
-   Oldenborgh.
- - Fix getopt unknown option handling, patch by John Spurling.
-
-2009-07-13
- - Add licensing statement: GPLv3.
-
- Bugs:
- - Allow for an @ character in username. (thanks Lorin Hochstein)
- - Disable deprecation warnings (python 2.6 deprecated socket.ssl).
+2012-10-11
+ - Added ability to choose the VPN connection when multiple are returned
 
 2008-12-06
  Features:

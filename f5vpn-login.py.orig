@@ -23,7 +23,7 @@ PPPD_PATH = "/usr/sbin/pppd"
 
 CONFIG_FILE = "~/.f5vpn-login.conf"
 
-KEEPALIVE_TIMEOUT = 60 * 10
+KEEPALIVE_TIMEOUT = 60 * 5
 
 proxy_addr = None
 
@@ -428,46 +428,16 @@ Host: %(host)s\r
 \r
 """ % dict(host=host, session=session)
     result = send_request(host, request)
-
-    if re.search('Location: /my.logon.php3', result):
-      # a redirect to the login page.
-      sys.stderr.write("Old session no longer valid.\n")
-      return None
-
-    # strip off the http header, we want just the xml...
-    favxmlstr = result[result.find('<?xml '):]
-
-    if len(favxmlstr) == 0:
-      raise NameError("Invalid response getting VPN connection list")
-
-    from xml.dom import minidom
-    xmldoc = minidom.parseString(favxmlstr)
-
-    # parse the xml return and build datastructure of the options
-    favs = []
-    for favxml in xmldoc.getElementsByTagName('favorite'):
-      name = favxml.getElementsByTagName('name')[0].firstChild.wholeText
-      favid = re.search('Z=(\S+,\S+)&', favxml.attributes['id'].value).group(1)
-
-      favs.append({'name': name, 'id': favid})
-
-    #import pprint
-    #pp = pprint.PrettyPrinter()
-    #pp.pprint(favs)
-
-    # let the user select which vpn connection they'd like to use...
-    selected_fav = -1
-    while selected_fav < 0 or selected_fav > len(favs)-1:
-      print "Select VPN connection:"
-
-      for i,v in enumerate(favs) :
-        print str(i) + ") " + v['name']
-
-      selected_fav = input()
-
-    print "Connecting to " + favs[selected_fav]['name']
-
-    return favs[selected_fav]['id'] or None
+    match = re.search('<favorite id="Z=([^"]*)">', result)
+    if match:
+        menu_number = match.group(1)
+        result = send_request(host, request)
+        return match.group(1)
+    else:
+        if re.search('^Location: /my.logon.php3', result):
+            # a redirect to the login page.
+            sys.stderr.write("Old session no longer valid.\n")
+        return None
 
 def get_VPN_params(host, session, menu_number):
     request = """GET /vdesk/vpn/connect.php3?Z=%(menu_number)s HTTP/1.0\r
@@ -783,10 +753,8 @@ Cookie: MRHSession=%s\r
 
     for i in range(5):
         try:
-            import struct
             ssl_socket = proxy_connect(tunnel_host, tunnel_port)
             ssl_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, True)
-            ssl_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, struct.pack('LL', 10, 0))
             ssl = socket.ssl(ssl_socket)
             ssl.write(request)
             initial_data = ssl.read()

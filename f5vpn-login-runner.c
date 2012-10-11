@@ -2,32 +2,24 @@
    by cleaning out the environment first.
 */
 
-#ifdef NO_HEADERS
-/* Just declare these here, since iphone-gcc doesn't seem to have headers. :( */
-void exit(int status);
-int execve(const char *path, char *const argv[], char *const envp[]);
-#else
-#include <unistd.h>
-#include <stdlib.h>
-#endif
 
 #ifndef PYTHON
-#error Makefile should have defined PYTHON
-#endif
-
-#ifndef PREFIX
-#error Makefile should have defined PREFIX
+#define PYTHON "/usr/bin/python"
 #endif
 
 #define MAX_ARGS 100
 
+/* Just declare these here, since iphone-gcc doesn't seem to have headers. */
+void exit(int status);
+int execve(const char *path, char *const argv[], char *const envp[]);
+
 int main(int argc, char **argv)
 {
-	char *env[] = {"PATH=/usr/local/bin:/usr/local/sbin:/bin:/sbin:/usr/bin:/usr/sbin", 0L};
+	char *env[] = {"PATH=/bin:/sbin:/usr/bin:/usr/sbin", 0L};
 	char *args[MAX_ARGS+2];
 	int i;
 	args[0] = PYTHON;
-	args[1] = PREFIX "/sbin/f5vpn-login.py";
+	args[1] = "/usr/sbin/f5vpn-login.py";
 	
 	for(i = 1; i < MAX_ARGS && i < argc; i++)
 	{
