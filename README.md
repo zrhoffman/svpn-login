@@ -1,4 +1,4 @@
-# F5 VPN Command-line client.
+# F5 VPN Command-line client
 
 This software allows you to connect to an [F5 Networks](https://f5.com/) VPN server without using their
 browser plugin. It also has the advantage of setting up DNS properly on OSX
@@ -16,7 +16,7 @@ to Windows, on the other hand, is probably not reasonably possible.
 
 *Forked from [mattjamison/f5-vpn-client](https://github.com/mattjamison/f5-vpn-client) with patches of [erniehh/f5-vpn-client](https://github.com/erniehh/f5-vpn-client).*
 
-### Install
+## Install
 
 As root:
 
@@ -24,7 +24,7 @@ As root:
 make install
 ```
 
-### Usage
+## Usage
 
 As normal user:
 
@@ -40,12 +40,12 @@ Use **CTRL-C** to exit.
 The application will save "user@host" and last session in ``~/.f5vpn-login.conf``. In case of problems or for reset the session data simply remove that file.
 
 
-### Authors
+## Authors
 
  * James Y Knight, <foom@fuhm.net>
  * Daniele Napolitano, <dnax88@gmail.com>
 
-### ChangeLog
+## ChangeLog
 
 ##### 2017-02-06
  - Fixed detect of expired session
@@ -119,7 +119,7 @@ Bugfixes:
  - Fixed a bug that caused it to not work on OSX 10.4.
  - Make the keepalive feature actually work.
 
-##### 2007-12-07:
+##### 2007-12-07
  New features:
  - Now sends a little traffic over the connection at least every 5 minutes, to
    keep crappy home NAT devices from tearing down the TCP connection.  (NetGear,
@@ -132,10 +132,10 @@ Bugfixes:
  - On OSX 10.5, use the SystemConfiguration python module instead of execing
    scutil (revdns change runs afoul of scutil's 256char line limit).
 
-##### 2007-10-24:
+##### 2007-10-24
  - Don't assume the VPN ID is 0,4: actually read the page to find the right number.
 
-##### 2007-09-08:
+##### 2007-09-08
   Rewrote the f5vpn-login script to no longer require the "svpn" binary
   from F5. It now just requires python and a little platform-specific
   knowledge about setting up routes and dns (implemented for linux and
