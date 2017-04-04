@@ -1,11 +1,11 @@
-F5 VPN Command-line client.
+# F5 VPN Command-line client.
 
-This software allows you to connect to an F5 VPN server without using their
+This software allows you to connect to an [F5 Networks](https://f5.com/) VPN server without using their
 browser plugin. It also has the advantage of setting up DNS properly on OSX
 systems, which the official client doesn't do. (but maybe they will in the
 future, now that they can copy the method I use).
 
-It is not supported or affiliated with F5 in any way. I actually find it rather
+**It is not supported or affiliated with F5 in any way.** I actually find it rather
 sad the client they provide is so terribly poor that I had to write this in
 order to get reliable access to my company's VPN.
 
@@ -14,39 +14,64 @@ client. The only requirement is Python 2.3.5 or later. It works on at least
 Linux and OSX systems, but porting to any similar OS should be trivial. Porting
 to Windows, on the other hand, is probably not reasonably possible.
 
-To install:
-"make install" as root.
+*Forked from [mattjamison/f5-vpn-client](https://github.com/mattjamison/f5-vpn-client) with patches of [erniehh/f5-vpn-client](https://github.com/erniehh/f5-vpn-client).*
 
-To run:
+### Install
 
-"f5vpn-login user@host" (not as root).
+As root:
 
-(user@host is saved for future invocations, so doesn't need to be
-specified on future invocations)
+```bash
+make install
+```
 
-Have fun,
-James Y Knight, <foom@fuhm.net>
+### Usage
 
-ChangeLog
----------
-2012-10-11
+As normal user:
+
+```bash
+f5vpn-login user@host
+```
+
+*user@host is saved for future invocations, so doesn't need to be
+specified on future invocations.*
+
+Use **CTRL-C** to exit.
+
+The application will save "user@host" and last session in ``~/.f5vpn-login.conf``. In case of problems or for reset the session data simply remove that file.
+
+
+### Authors
+
+ * James Y Knight, <foom@fuhm.net>
+ * Daniele Napolitano, <dnax88@gmail.com>
+
+### ChangeLog
+
+##### 2017-02-06
+ - Fixed detect of expired session
+
+##### 2013-09-05 
+ - Adding options for --skip-dns and --skip-routes to prevent f5 from setting any routes or resolv.conf options, regardless of the config pulled from the remote gateway
+
+##### 2012-10-11
  - Added ability to choose the VPN connection when multiple are returned
 
-2008-12-06
- Features:
+##### 2008-12-06
+
+Features:
  - Added SOCKS proxy support, if you have the "SocksiPy" python module
    installed; use the --socks5-proxy argument.
 
- Bugfixes:
+Bugfixes:
  - Fixed compatibility issues with some newer version of the VPN server.
    (thanks James Trammell and Dave Cadwallader)
 
-2008-10-31
- Bugfix:
+##### 2008-10-31
+   Bugfix:
  - Oops I broke resolvconf again. :( Forgot an os.close()...
 
-2008-10-25
- Bugfixes:
+##### 2008-10-25
+   Bugfixes:
  - Support non-split-tunneling VPN configuration. (thanks Mark Kamichoff)
    - Use "UseDefaultGateway0" param to tell pppd to set the machine's default
      route, and to override the DNS servers, rather than supplementing them.
@@ -60,23 +85,23 @@ ChangeLog
  - Fix crash in routespec_to_revdns when getting a /32 route.
  - Miscellaneous other cleanups
 
-2008-08-04
+##### 2008-08-04
  Features
  - Added ability to connect via a HTTPS proxy with a --proxy=hostname:port argument.
 
-2008-07-25
+##### 2008-07-25
  Features:
  - Basic functionality on iPhone v2.0. Requires python and pyobjc, both of which
    you can install easily via Cydia. For now, at least, you'll have to run it in
    the terminal, and, since the iphone drops the net connection every time the
    phone sleeps, it's not really very usable.
 
-2008-07-21
+##### 2008-07-21
  Bugs:
  - Fixed bug in DNS on linux. (too clever by far)
  - Retry connecting a few times if the VPN fails to answer properly.
 
-2008-05-07
+##### 2008-05-07
  Features:
  - Added support for the resolvconf DNS-manager on linux systems which have it installed.
 
@@ -86,7 +111,7 @@ ChangeLog
  - If no DNS0 parameter is supplied by the VPN server, don't attempt to set up
    DNS overrides.
 
-2008-01-17
+##### 2008-01-17
  Features:
  - Added a SIGUSR1 handler which prints some stuff.
 
@@ -94,7 +119,7 @@ ChangeLog
  - Fixed a bug that caused it to not work on OSX 10.4.
  - Make the keepalive feature actually work.
 
-2007-12-07:
+##### 2007-12-07:
  New features:
  - Now sends a little traffic over the connection at least every 5 minutes, to
    keep crappy home NAT devices from tearing down the TCP connection.  (NetGear,
@@ -107,10 +132,10 @@ ChangeLog
  - On OSX 10.5, use the SystemConfiguration python module instead of execing
    scutil (revdns change runs afoul of scutil's 256char line limit).
 
-2007-10-24:
+##### 2007-10-24:
  - Don't assume the VPN ID is 0,4: actually read the page to find the right number.
 
-2007-09-08:
+##### 2007-09-08:
   Rewrote the f5vpn-login script to no longer require the "svpn" binary
   from F5. It now just requires python and a little platform-specific
   knowledge about setting up routes and dns (implemented for linux and
@@ -120,3 +145,4 @@ ChangeLog
   - It actually shuts down the connection when you ask it to.
   - On OSX, it uses the platform specific DNS setup features, which
 	allows the dns information to not be overwritten periodically.
+
