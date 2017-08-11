@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Log in to a F5 Firepass SSL VPN from a command-line, without using F5's
 browser-plugin and associated junk. Yay.
 
@@ -335,7 +335,7 @@ def send_request(host, request):
     data = ''
     while 1:
         try:
-            data += ssl.read()
+            data += ssl.read(1)
         except (socket.error, socket.sslerror):
             break
     #print data
@@ -653,7 +653,7 @@ def run_event_loop(pppd_fd, ssl_socket, ssl, logpipe_r, ppp_ip_up):
         if not data_to_pppd:
             try:
                 ssl_read_blocked_on_write = False
-                data_to_pppd = ssl.read()
+                data_to_pppd = ssl.read(1)
                 if not data_to_pppd: #EOF
                     print "EOF on ssl"
                     break
@@ -789,7 +789,7 @@ Cookie: MRHSession=%s\r
             ssl_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, struct.pack('LL', 10, 0))
             ssl = socket.ssl(ssl_socket)
             ssl.write(request)
-            initial_data = ssl.read()
+            initial_data = ssl.read(1)
             break
         except socket.sslerror, e:
             # Sometimes the server seems to respond with "EOF occurred in violation of protocol"
