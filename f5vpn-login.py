@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Log in to a F5 Firepass SSL VPN from a command-line, without using F5's
 browser-plugin and associated junk. Yay.
 
@@ -335,7 +335,7 @@ def send_request(host, request):
     data = ''
     while 1:
         try:
-            data += ssl.read()
+            data += ssl.read(1)
         except (socket.error, socket.sslerror):
             break
     #print data
@@ -429,7 +429,7 @@ Host: %(host)s\r
 """ % dict(host=host, session=session)
     result = send_request(host, request)
 
-    if re.search('Location: /my.logon.php3', result):
+    if re.search('HTTP/1.1 302 Found', result):
       # a redirect to the login page.
       sys.stderr.write("Old session no longer valid.\n")
       return None
@@ -653,7 +653,7 @@ def run_event_loop(pppd_fd, ssl_socket, ssl, logpipe_r, ppp_ip_up):
         if not data_to_pppd:
             try:
                 ssl_read_blocked_on_write = False
-                data_to_pppd = ssl.read()
+                data_to_pppd = ssl.read(1)
                 if not data_to_pppd: #EOF
                     print "EOF on ssl"
                     break
@@ -770,7 +770,7 @@ def routespec_to_revdns(netparts, bits):
         return [(str(n) + '.' + domain)
                 for n in range(start_addr, start_addr + 2**(remaining_bits))]
 
-def execPPPd(params):
+def execPPPd(params,skip_dns=False,skip_routes=False):
     tunnel_host=params['tunnel_host0']
     tunnel_port=int(params['tunnel_port0'])
 
@@ -789,7 +789,7 @@ Cookie: MRHSession=%s\r
             ssl_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, struct.pack('LL', 10, 0))
             ssl = socket.ssl(ssl_socket)
             ssl.write(request)
-            initial_data = ssl.read()
+            initial_data = ssl.read(1)
             break
         except socket.sslerror, e:
             # Sometimes the server seems to respond with "EOF occurred in violation of protocol"
@@ -866,16 +866,17 @@ Cookie: MRHSession=%s\r
     def ppp_ip_up(iface_name, tty, local_ip, remote_ip):
         revdns_domains = []
         if params.get('LAN0'):
-            for routespec in params['LAN0'].split(' '):
-                net, bits = parse_net_bits(routespec)
-                platform.setup_route(iface_name, local_ip, '.'.join(map(str, net)), bits, 'add')
-                revdns_domains.extend(routespec_to_revdns(net, bits))
+            if not skip_routes:
+                for routespec in params['LAN0'].split(' '):
+                    net, bits = parse_net_bits(routespec)
+                    platform.setup_route(iface_name, local_ip, '.'.join(map(str, net)), bits, 'add')
+                    revdns_domains.extend(routespec_to_revdns(net, bits))
 
         # sending a packet to the "local" ip appears to actually send data
         # across the connection, which is the desired behavior.
         set_keepalive_host(local_ip)
 
-        if params.get('DNS0'):
+        if params.get('DNS0') and not skip_dns:
             platform.setup_dns(iface_name, serviceid,
                                params['DNS0'].split(','),
                                params['DNSSuffix0'].split(' '), revdns_domains, override_gateway)
@@ -920,6 +921,15 @@ def write_prefs(line):
 
 def main(argv):
     global proxy_addr
+
+    skip_dns = False
+    skip_routes = False
+
+    if '--skip-dns' in argv:
+        skip_dns = True
+    else:
+        skip_dns = False
+
     if '--help' in argv:
         usage(argv[0], sys.stdout)
         sys.exit(0)
@@ -939,7 +949,7 @@ def main(argv):
     os.seteuid(os.getuid())
     user = getpass.getuser()
 
-    opts,args=getopt.getopt(argv[1:], "", ['http-proxy=', 'socks5-proxy='])
+    opts,args=getopt.getopt(argv[1:], "", ['http-proxy=', 'socks5-proxy=', 'skip-routes','skip-dns'])
 
     if len(args) > 1:
         usage(argv[0], sys.stderr)
@@ -977,6 +987,10 @@ def main(argv):
                 sys.exit(1)
             proxy_addr = ('socks5',) + parse_hostport(val)
             sys.stderr.write("Using proxy: %r\n" % (proxy_addr,))
+        elif opt in ('--skip-dns'):
+            skip_dns = True
+        elif opt in ('--skip-routes'):
+            skip_routes = True
         else:
             sys.stderr.write("Unknown option: %s\n" % opt)
             sys.exit(1)
@@ -1015,7 +1029,7 @@ def main(argv):
     print "Got plugin params, execing vpn client"
 
     try:
-        execPPPd(params)
+        execPPPd(params,skip_dns,skip_routes)
     except KeyboardInterrupt:
         pass
     except SystemExit, se:

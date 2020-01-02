@@ -4,7 +4,7 @@
 
 
 #ifndef PYTHON
-#define PYTHON "/usr/bin/python"
+#define PYTHON "/usr/bin/python3"
 #endif
 
 #define MAX_ARGS 100

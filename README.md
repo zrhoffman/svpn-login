@@ -14,15 +14,17 @@ client. The only requirement is Python 2.3.5 or later. It works on at least
 Linux and OSX systems, but porting to any similar OS should be trivial. Porting
 to Windows, on the other hand, is probably not reasonably possible.
 
-*Forked from [mattjamison/f5-vpn-client](https://github.com/mattjamison/f5-vpn-client) with patches of [erniehh/f5-vpn-client](https://github.com/erniehh/f5-vpn-client).*
-
 ## Install
 
-As root:
-
+Build:
 ```bash
 make install
 ```
+as root.
+
+Add to path:
+`cat export PATH=$PATH:/usr/local/bin >> .bash_profile` # for bash
+`cat export PATH=$PATH:/usr/local/bin >> .zsh_profile` # for zsh
 
 ## Usage
 
@@ -46,6 +48,9 @@ The application will save "user@host" and last session in ``~/.f5vpn-login.conf`
  * Daniele Napolitano, <dnax88@gmail.com>
 
 ## ChangeLog
+
+##### 2018-03-16
+ - Added support for mac os x 10.13 (moved install to `/usr/local/bin` for 우리 예지 :)
 
 ##### 2017-02-06
  - Fixed detect of expired session
