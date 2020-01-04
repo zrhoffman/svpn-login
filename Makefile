@@ -12,3 +12,7 @@ install: build
 
 clean:
 	rm f5vpn-login-runner
+
+uninstall:
+	rm -f /usr/local/sbin/f5vpn-login
+	rm -f /usr/local/sbin/f5vpn-login.py
