@@ -973,11 +973,6 @@ def main(argv):
     skip_dns = False
     skip_routes = False
 
-    if '--skip-dns' in argv:
-        skip_dns = True
-    else:
-        skip_dns = False
-
     if '--help' in argv:
         usage(argv[0], sys.stdout)
         sys.exit(0)
