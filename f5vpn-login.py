@@ -992,7 +992,7 @@ def main(argv):
     os.seteuid(os.getuid())
     user = getpass.getuser()
 
-    opts, args = getopt.getopt(argv[1:], "", ['http-proxy=', 'socks5-proxy=', 'skip-routes', 'skip-dns'])
+    opts, args = getopt.getopt(argv[1:], "", ['http-proxy=', 'session=', 'socks5-proxy=', 'skip-routes', 'skip-dns'])
 
     if len(args) > 1:
         usage(argv[0], sys.stderr)
@@ -1000,6 +1000,7 @@ def main(argv):
 
     prefs = get_prefs()
     old_session = None
+    session = None
     userhost = None
     if prefs is not None:
         path, userhost, old_session = prefs.split('\0')
@@ -1034,13 +1035,15 @@ def main(argv):
             skip_dns = True
         elif opt in ('--skip-routes'):
             skip_routes = True
+        elif opt in ('--session'):
+            session = val
         else:
             sys.stderr.write("Unknown option: %s\n" % opt)
             sys.exit(1)
 
     params = None
 
-    if old_session:
+    if session is None and old_session is not None:
         print "Trying old session..."
         menu_number = get_vpn_menu_number(host, old_session)
         if menu_number is not None:
@@ -1048,7 +1051,7 @@ def main(argv):
             session = old_session
 
     if params is None:
-        while True:
+        while session is None:
             password = getpass.getpass("radius password for %s@%s? " % (user, host))
             dpassword = getpass.getpass("lan password for %s@%s? " % (user, host))
             session = do_login(host, user, password, dpassword)
