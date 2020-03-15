@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python2
 """Log in to a F5 Firepass SSL VPN from a command-line, without using F5's
 browser-plugin and associated junk. Yay.
 
