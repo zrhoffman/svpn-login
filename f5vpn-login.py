@@ -536,6 +536,8 @@ Host: %(host)s\r
 def decode_params(paramsStr):
     paramsDict = {}
     for param in paramsStr.split('&'):
+        if param == '':
+            continue
         k, v = param.split('=', 1)
         if re.match('q[0-9]+', k):
             k, v = v.decode('hex').split('=', 1)
