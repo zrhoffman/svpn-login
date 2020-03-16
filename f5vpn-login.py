@@ -84,6 +84,9 @@ def run_as_root(args, stdin=None):
 
 
 class Platform:
+    def __init__(self):
+        self.ifconfig_path = None
+
     def setup_route(self, ifname, gateway_ip, net, bits, action):
         pass
 
@@ -118,6 +121,13 @@ class DarwinPlatform(Platform):
             self.route_path = "/usr/bin/route"
         else:
             raise Exception("Couldn't find route command")
+
+        if os.path.exists('/sbin/ifconfig'):
+            self.ifconfig_path = '/sbin/ifconfig'
+        elif os.path.exists('/usr/bin/ifconfig'):
+            self.ifconfig_path = '/usr/bin/ifconfig'
+        else:
+            raise Exception("Couldn't find ifconfig command")
 
     def setup_route(self, ifname, gateway_ip, net, bits, action):
         args = [self.route_path, action, '-net', "%s/%s" % (net, bits)]
@@ -183,6 +193,34 @@ class DarwinPlatform(Platform):
 
 
 class Linux2Platform(Platform):
+    def __init__(self):
+        self.ifconfig_path = '/sbin/ifconfig'
+
+    def wait_for_interface(self, iface_name):
+        iface_up = False
+        already_unknown = False
+        while not iface_up:
+            try:
+                state_file = file('/sys/class/net/%s/operstate' % iface_name)
+                state = str.strip(state_file.read())
+                if state == 'up':
+                    iface_up = True
+                    continue
+                elif state == 'unknown':
+                    if already_unknown:
+                        iface_up = True
+                        continue
+                    already_unknown = True
+                    print('Status of interface %s is unknown. Waiting 5 seconds...' % iface_name)
+                else:
+                    already_unknown = True
+                    print('Interface %s is not up yet. Waiting 5 seconds...' % iface_name)
+            except IOError:
+                print('Interface %s does not exist yet. Waiting 5 seconds...' % iface_name)
+            time.sleep(5)
+
+        print('Interface %s is up!' % iface_name)
+
     def setup_route(self, ifname, gateway_ip, net, bits, action):
         if bits == 32:
             host_or_net = "-host"
@@ -931,14 +969,28 @@ Cookie: MRHSession=%s\r
     os.close(slave_pppd_fd)
     os.close(logpipe_w)
 
+    def setup_route(iface_name, local_ip, revdns_domains):
+        for routespec in params['LAN0'].split(' '):
+            net, bits = parse_net_bits(routespec)
+            platform.setup_route(iface_name, local_ip, '.'.join(map(str, net)), bits, 'add')
+            revdns_domains.extend(routespec_to_revdns(net, bits))
+
     def ppp_ip_up(iface_name, tty, local_ip, remote_ip):
         revdns_domains = []
         if params.get('LAN0'):
             if not skip_routes:
-                for routespec in params['LAN0'].split(' '):
-                    net, bits = parse_net_bits(routespec)
-                    platform.setup_route(iface_name, local_ip, '.'.join(map(str, net)), bits, 'add')
-                    revdns_domains.extend(routespec_to_revdns(net, bits))
+                if getattr(platform, 'wait_for_interface'):
+                    pid = os.fork()
+                    if pid != 0:
+                        # Become root
+                        os.seteuid(0)
+                        os.setuid(0)
+
+                        platform.wait_for_interface(iface_name)
+                        setup_route(iface_name, local_ip, revdns_domains)
+                        os.waitpid(pid, 0)
+                else:
+                    setup_route(iface_name, local_ip, revdns_domains)
 
         # sending a packet to the "local" ip appears to actually send data
         # across the connection, which is the desired behavior.
