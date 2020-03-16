@@ -13,6 +13,7 @@ Author: James Y Knight <foom@fuhm.net>
 """
 import socket, re, sys, os, time, fcntl, select, errno, signal
 import getpass, getopt, types
+import string
 
 try:
     import socks
@@ -520,6 +521,12 @@ Host: %(host)s\r
         matches = list(re.finditer("document.writeln\('(version=[^)]*)'\)", result))
 
     if not matches:
+        xml_match = re.search(pattern=r'<\?xml.*<favorite.*<object\s+ID="ur_Host".+?</favorite>', string=result, flags=re.DOTALL)
+        if xml_match is not None:
+            paramsDict = decode_xml_params(xml_match.group(0))
+            return paramsDict
+
+    if not matches:
         if re.search('^Location: /my.logon.php3', result):
             # a redirect to the login page.
             sys.stderr.write("Old session no longer valid.\n")
@@ -535,6 +542,20 @@ Host: %(host)s\r
     # print paramsDict
     return paramsDict
 
+def decode_xml_params(xml_param_str):
+    paramsDict = {}
+    from xml.dom.minidom import parseString, Element
+    xmldoc = parseString(xml_param_str)
+    for element in xmldoc.getElementsByTagName('object')[0].childNodes:
+        if not isinstance(element, Element):
+            continue
+        if element.firstChild is None:
+            value = ''
+        else:
+            value = element.firstChild.wholeText.strip(string.whitespace)
+        paramsDict[element.tagName] = value
+
+    return paramsDict
 
 def decode_params(paramsStr):
     paramsDict = {}
