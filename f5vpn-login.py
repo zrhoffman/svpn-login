@@ -473,7 +473,10 @@ Host: %(host)s\r
     favs = []
     for favxml in xmldoc.getElementsByTagName('favorite'):
         name = favxml.getElementsByTagName('name')[0].firstChild.wholeText
-        favid = re.search('Z=(\S+,\S+)&', favxml.attributes['id'].value).group(1)
+        favid = favxml.attributes['id'].value
+        z_matches = re.search('Z=(\S+,\S+)&', favid)
+        if z_matches is not None:
+            favid = z_matches.group(1)
 
         favs.append({'name': name, 'id': favid})
 
@@ -497,7 +500,7 @@ Host: %(host)s\r
 
 
 def get_VPN_params(host, session, menu_number):
-    request = """GET /vdesk/vpn/connect.php3?Z=%(menu_number)s HTTP/1.0\r
+    request = """GET /vdesk/vpn/connect.php3?resourcename=%(menu_number)s&outform=xml&client_version=1.1 HTTP/1.0\r
 Accept: */*\r
 Accept-Language: en\r
 Cookie: uRoamTestCookie=TEST; VHOST=standard; MRHSession=%(session)s\r
