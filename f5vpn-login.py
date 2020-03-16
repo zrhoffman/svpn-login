@@ -1016,7 +1016,7 @@ Cookie: MRHSession=%s\r
 
 
 def usage(exename, s):
-    print >> s, "Usage: %s [--skip-dns] [--skip-routes] [--{http,socks5}-proxy=host:port] [[user@]host]" % exename
+    print >> s, "Usage: %s [--skip-dns] [--skip-routes] [--session=sessionid] [--{http,socks5}-proxy=host:port] [[user@]host]" % exename
 
 
 def get_prefs():
