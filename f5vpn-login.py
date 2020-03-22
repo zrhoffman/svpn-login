@@ -228,7 +228,7 @@ class Linux2Platform(Platform):
             host_or_net = "-net"
         run_as_root(['/sbin/route', action, host_or_net,
                      "%s/%s" % (net, bits),
-                     'gw', gateway_ip])
+                     'gw', gateway_ip, 'dev', ifname])
 
 
 class ManualFrobbingDNSMixin:
@@ -909,10 +909,10 @@ Cookie: MRHSession=%s\r
     # Make log pipe
     logpipe_r, logpipe_w = os.pipe()
 
-    # If the server says to redirect the default gateway, we need to first add
-    # an explicit route for the VPN server with the /current/ default gateway.
-    # The default gw will automatically be set by pppd.
-    override_gateway = ('UseDefaultGateway0' in params)
+    # We need to first add an explicit route for the VPN server with the
+    # /current/ default gateway. The default gw will automatically be set by
+    # pppd.
+    override_gateway = True
     if override_gateway:
         # FIXME: This is a total hack...and incorrect in some cases, too.  But
         # it'll work in the normal case where the VPN server isn't on your local
@@ -921,14 +921,16 @@ Cookie: MRHSession=%s\r
         # the default route.
         tunnel_ip = ssl_socket.getpeername()[0]
 
-        gw_ip = os.popen("netstat -rn|grep '^default\|^0.0.0.0'|awk '{print $2}'").read().split()[0]
+        default_route = os.popen("netstat -rn | grep '^0\.0\.0\.0' | head -n1").read().split()
+        gw_ip = default_route[1]
+        default_interface = default_route[-1]
         sys.stderr.write("Detected current default route: %r\n" % gw_ip)
         sys.stderr.write("Attempting to delete and override route to VPN server.\n")
         try:
-            platform.setup_route('', gw_ip, tunnel_ip, 32, 'delete')
+            platform.setup_route(default_interface, gw_ip, tunnel_ip, 32, 'delete')
         except:
             pass
-        platform.setup_route('', gw_ip, tunnel_ip, 32, 'add')
+        platform.setup_route(default_interface, gw_ip, tunnel_ip, 32, 'add')
 
     pid = os.fork()
     if pid == 0:
@@ -1010,7 +1012,7 @@ Cookie: MRHSession=%s\r
         as_root(shutdown_pppd, pid)
         if override_gateway:
             try:
-                platform.setup_route('', gw_ip, tunnel_ip, 32, 'delete')
+                platform.setup_route(default_interface, gw_ip, tunnel_ip, 32, 'delete')
             except:
                 pass
 
