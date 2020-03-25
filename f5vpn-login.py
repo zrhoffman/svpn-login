@@ -953,7 +953,7 @@ Cookie: MRHSession=%s\r
         # Run pppd
         args = [PPPD_PATH, 'logfd', '4', 'noauth', 'nodetach',
                 'crtscts', 'passive', 'ipcp-accept-local', 'ipcp-accept-remote',
-                'nodeflate', 'novj', 'local']
+                'nodeflate', 'novj', 'local', '+ipv6']
 
         if override_gateway:
             args.append('defaultroute')
