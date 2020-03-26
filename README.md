@@ -8,9 +8,9 @@ sad the client they provide is so terribly poor that I had to write this in
 order to get reliable access to my company's VPN.
 
 This software does not require any software from F5 to be installed on the
-client. The only requirement is Python 2.3.5 or later. It works on at least
-Linux and MacOS systems, but porting to any similar OS should be trivial. Porting
-to Windows, on the other hand, is probably not reasonably possible.
+client. The only requirement is Python 3. It works on at least Linux and MacOS
+systems, but porting to any similar OS should be trivial. Porting to Windows, on
+the other hand, is probably not reasonably possible.
 
 ## Setup
 

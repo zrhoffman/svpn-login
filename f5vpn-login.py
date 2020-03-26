@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 """Log in to a F5 BIG-IP APM VPN from a command-line without using F5's
 proprietary junk. Yay.
 
@@ -10,6 +10,8 @@ socket.ssl)
 import socket, re, sys, os, time, fcntl, select, errno, signal
 import getpass, getopt, types
 import string
+import ssl
+from ssl import wrap_socket
 
 try:
     import socks
@@ -45,10 +47,12 @@ def sts_result(sts):
     elif os.WIFEXITED(sts):
         return os.WEXITSTATUS(sts)
     else:
-        raise os.error, "Not signaled or exited???"
+        raise os.error("Not signaled or exited???")
 
 
 def run_as_root(args, stdin=None):
+    if isinstance(stdin, str):
+        stdin = stdin.encode('utf-8')
     if stdin is not None:
         pipe_r, pipe_w = os.pipe()
     else:
@@ -94,19 +98,24 @@ class Platform:
 
 
 class DummyPlatform:
-    def setup_route(self, ifname, gateway_ip, net, bits, action):
-        print "setup_route(ifname=%r, gateway_ip=%r, net=%r, bits=%r, action=%r" % (
-        ifname, gateway_ip, net, bits, action)
+    @staticmethod
+    def setup_route(ifname, gateway_ip, net, bits, action):
+        print("setup_route(ifname=%r, gateway_ip=%r, net=%r, bits=%r, action=%r" % (
+            ifname, gateway_ip, net, bits, action))
 
-    def setup_host_route(self, ifname, gateway_ip, net, bits):
-        print "teardown_route(ifname=%r, gateway_ip=%r, net=%r, bits=%r" % (ifname, gateway_ip, net, bits)
+    @staticmethod
+    def setup_host_route(ifname, gateway_ip, net, bits):
+        print("teardown_route(ifname=%r, gateway_ip=%r, net=%r, bits=%r" % (ifname, gateway_ip, net, bits))
 
-    def setup_dns(self, iface_name, service_id, dns_servers, dns_domains, revdns_domains, override_gateway):
-        print "setup_dns(iface_name=%r, service_id=%r, dns_servers=%r, dns_domains=%r, revdns_domains=%r, override_gateway=%r)" % (
-        iface_name, service_id, dns_servers, dns_domains, revdns_domains, override_gateway)
+    @staticmethod
+    def setup_dns(iface_name, service_id, dns_servers, dns_domains, revdns_domains, override_gateway):
+        print(
+            "setup_dns(iface_name=%r, service_id=%r, dns_servers=%r, dns_domains=%r, revdns_domains=%r, override_gateway=%r)" % (
+                iface_name, service_id, dns_servers, dns_domains, revdns_domains, override_gateway))
 
-    def teardown_dns(self):
-        print "teardown_dns()"
+    @staticmethod
+    def teardown_dns():
+        print("teardown_dns()")
 
 
 class DarwinPlatform(Platform):
@@ -133,7 +142,8 @@ class DarwinPlatform(Platform):
             args += [gateway_ip]
         run_as_root(args)
 
-    def load_SystemConfigurationFramework(self):
+    @staticmethod
+    def load_SystemConfigurationFramework():
         try:
             # If it's already been wrapped, we're done.
             import SystemConfiguration
@@ -188,7 +198,7 @@ class DarwinPlatform(Platform):
             as_root(setup_helper)
 
 
-class Linux2Platform(Platform):
+class LinuxPlatform(Platform):
     def __init__(self):
         self.ifconfig_path = '/sbin/ifconfig'
 
@@ -197,7 +207,7 @@ class Linux2Platform(Platform):
         already_unknown = False
         while not iface_up:
             try:
-                state_file = file('/sys/class/net/%s/operstate' % iface_name)
+                state_file = open('/sys/class/net/%s/operstate' % iface_name)
                 state = str.strip(state_file.read())
                 if state == 'up':
                     iface_up = True
@@ -249,8 +259,7 @@ class ManualFrobbingDNSMixin:
             else:
                 other_lines.append(line)
 
-        new_resolv_conf = []
-        new_resolv_conf.append("search %s %s" % (' '.join(dns_domains), search))
+        new_resolv_conf = ["search %s %s" % (' '.join(dns_domains), search)]
         for ns in dns_servers + nses:
             new_resolv_conf.append("nameserver %s" % ns)
         new_resolv_conf.extend(other_lines)
@@ -307,23 +316,23 @@ class ResolvConfHelperDNSMixin:
             pass
 
 
-class Linux2ManualPlatform(ManualFrobbingDNSMixin, Linux2Platform):
+class LinuxManualPlatform(ManualFrobbingDNSMixin, LinuxPlatform):
     pass
 
 
-class Linux2ResolvconfPlatform(ResolvConfHelperDNSMixin, Linux2Platform):
+class LinuxResolvconfPlatform(ResolvConfHelperDNSMixin, LinuxPlatform):
     pass
 
 
 def get_platform():
     if sys.platform == "darwin":
         return DarwinPlatform()
-    elif sys.platform == "linux2":
+    elif sys.platform == "linux":
         # Choose a dns resolver setup routine
         if os.path.exists('/sbin/resolvconf'):
-            return Linux2ResolvconfPlatform()
+            return LinuxResolvconfPlatform()
         else:
-            return Linux2ManualPlatform()
+            return LinuxManualPlatform()
     else:
         # The *BSDs aren't supported at the moment...but there's no reason they
         # can't be, when someone with such a platform tells me the syntax for
@@ -387,13 +396,13 @@ def parse_hostport(host, default_port=0):
 def send_request(host, request):
     ip, port = parse_hostport(host, 443)
     s = proxy_connect(ip, port)
-    ssl = socket.ssl(s)
-    ssl.write(request)
-    data = ''
+    ssl_socket = wrap_socket(s)
+    ssl_socket.write(request.encode('utf-8'))
+    data = ''.encode('utf-8')
     while 1:
         try:
-            data += ssl.read(1)
-        except (socket.error, socket.sslerror):
+            data += ssl_socket.read(1)
+        except (socket.error, ssl.SSLError):
             break
     # print data
     return data
@@ -488,7 +497,7 @@ User-Agent: Mozilla/5.0 (Macintosh; U; PPC Mac OS X; en) AppleWebKit/417.9 (KHTM
 Host: %(host)s\r
 \r
 """ % dict(host=host, session=session)
-    result = send_request(host, request)
+    result = send_request(host, request).decode('utf-8')
 
     if re.search('HTTP/1.1 302 Found', result):
         # a redirect to the login page.
@@ -522,14 +531,14 @@ Host: %(host)s\r
     # let the user select which vpn connection they'd like to use...
     selected_fav = -1
     while selected_fav < 0 or selected_fav > len(favs) - 1:
-        print "Select VPN connection:"
+        print("Select VPN connection:")
 
         for i, v in enumerate(favs):
-            print str(i) + ") " + v['name']
+            print(str(i) + ") " + v['name'])
 
-        selected_fav = input()
+        selected_fav = int(input())
 
-    print "Connecting to " + favs[selected_fav]['name']
+    print("Connecting to " + favs[selected_fav]['name'])
 
     return favs[selected_fav]['id'] or None
 
@@ -544,7 +553,7 @@ User-Agent: Mozilla/5.0 (Macintosh; U; PPC Mac OS X; en) AppleWebKit/417.9 (KHTM
 Host: %(host)s\r
 \r
 """ % dict(menu_number=menu_number, session=session, host=host)
-    result = send_request(host, request)
+    result = send_request(host, request).decode('utf-8')
     # print "RESULT:", result
 
     # Try to find the plugin parameters
@@ -621,7 +630,7 @@ class LogWatcher:
             return match.group(1)
 
     def process(self, logmsg):
-        print "PPPD LOG: %r" % logmsg
+        print("PPPD LOG: %r" % logmsg)
 
         self.collected_log += logmsg
 
@@ -637,7 +646,7 @@ class LogWatcher:
         if not (self.notified or
                 self.iface_name is None or self.tty is None or
                 self.remote_ip is None or self.local_ip is None):
-            print "CALLING ip_up%r" % ((self.iface_name, self.tty, self.local_ip, self.remote_ip),)
+            print("CALLING ip_up%r" % ((self.iface_name, self.tty, self.local_ip, self.remote_ip),))
             self.notified = True
             self.ip_up(self.iface_name, self.tty, self.local_ip, self.remote_ip)
 
@@ -705,7 +714,7 @@ def run_event_loop(pppd_fd, ssl_socket, ssl, logpipe_r, ppp_ip_up):
         # Run the select, woot
         try:
             reads, writes, exc = select.select(reads, writes, [], timeout)
-        except select.error, se:
+        except select.error as se:
             if se.args[0] not in (errno.EAGAIN, errno.EINTR):
                 raise
             continue  # loop back around to try again
@@ -723,12 +732,12 @@ def run_event_loop(pppd_fd, ssl_socket, ssl, logpipe_r, ppp_ip_up):
 
         # Read data from log pipe
         try:
-            logmsg = os.read(logpipe_r, 10000)
+            logmsg = os.read(logpipe_r, 10000).decode('utf-8')
             if not logmsg:  # EOF
-                print "EOF on logpipe_r"
+                print("EOF on logpipe_r")
                 break
             logwatcher.process(logmsg)
-        except OSError, se:
+        except OSError as se:
             if se.args[0] not in (errno.EAGAIN, errno.EINTR):
                 raise
 
@@ -737,10 +746,10 @@ def run_event_loop(pppd_fd, ssl_socket, ssl, logpipe_r, ppp_ip_up):
             try:
                 data_to_ssl = os.read(pppd_fd, 10000)
                 if not data_to_ssl:  # EOF
-                    print "EOF on pppd"
+                    print("EOF on pppd")
                     break
                 # print "READ PPPD: %r" % data_to_ssl
-            except OSError, se:
+            except OSError as se:
                 if se.args[0] not in (errno.EAGAIN, errno.EINTR):
                     raise
 
@@ -748,15 +757,15 @@ def run_event_loop(pppd_fd, ssl_socket, ssl, logpipe_r, ppp_ip_up):
         if not data_to_pppd:
             try:
                 ssl_read_blocked_on_write = False
-                data_to_pppd = ssl.read(1)
+                data_to_pppd = ssl_socket.read(1)
                 if not data_to_pppd:  # EOF
-                    print "EOF on ssl"
+                    print("EOF on ssl")
                     break
                 last_activity_time = time.time()
-            except socket.sslerror, se:
-                if se.args[0] == socket.SSL_ERROR_WANT_READ:
+            except ssl.SSLError as se:
+                if se.args[0] == ssl.SSL_ERROR_WANT_READ:
                     pass
-                elif se.args[0] == socket.SSL_ERROR_WANT_WRITE:
+                elif se.args[0] == ssl.SSL_ERROR_WANT_WRITE:
                     ssl_read_blocked_on_write = True
                 else:
                     raise
@@ -768,7 +777,7 @@ def run_event_loop(pppd_fd, ssl_socket, ssl, logpipe_r, ppp_ip_up):
                 num_written = os.write(pppd_fd, data_to_pppd)
                 # print "WROTE PPPD: %r" % data_to_pppd[:num_written]
                 data_to_pppd = data_to_pppd[num_written:]
-            except OSError, se:
+            except OSError as se:
                 if se.args[0] not in (errno.EAGAIN, errno.EINTR):
                     raise
 
@@ -783,15 +792,15 @@ def run_event_loop(pppd_fd, ssl_socket, ssl, logpipe_r, ppp_ip_up):
         if data_to_ssl_buf2:
             try:
                 ssl_write_blocked_on_read = False
-                num_written = ssl.write(data_to_ssl_buf2)
+                num_written = ssl_socket.write(data_to_ssl_buf2)
                 # should always either write all data, or raise a WANT_*
                 assert num_written == len(data_to_ssl_buf2)
                 data_to_ssl_buf2 = ''
                 last_activity_time = time.time()
-            except socket.sslerror, se:
-                if se.args[0] == socket.SSL_ERROR_WANT_READ:
+            except ssl.SSLError as se:
+                if se.args[0] == ssl.SSL_ERROR_WANT_READ:
                     ssl_write_blocked_on_read = True
-                elif se.args[0] == socket.SSL_ERROR_WANT_WRITE:
+                elif se.args[0] == ssl.SSL_ERROR_WANT_WRITE:
                     pass
                 else:
                     raise
@@ -813,14 +822,6 @@ for x in range(33):
     mask2bits[2 ** 32 - 2 ** (32 - x)] = x
 
 
-def parts_to_int(s):
-    num = 0
-    for n in parts:
-        num = num * 256 + n
-    num *= 256 ** (4 - len(parts))
-    return num
-
-
 def parse_net_bits(routespec):
     # This routine parses the following formats:
     # w.x.y.z/numbits
@@ -828,13 +829,12 @@ def parse_net_bits(routespec):
     # w[.x[.y[.z]]] (netmask implicit in number of .s)
     if '/' in routespec:
         net, bits = routespec.split('/', 1)
-        netparts = map(int, net.split('.'))
+        netparts = list(map(int, net.split('.')))
         while len(netparts) < 4:
             netparts.append(0)
 
         if '.' in bits:
-            parts = map(int, bits.split('.'))
-            netmaskparts = map(int, bits.split('.'))
+            netmaskparts = list(map(int, bits.split('.')))
             netmask = 0
             for n in netmaskparts:
                 netmask = netmask * 256 + n
@@ -846,7 +846,7 @@ def parse_net_bits(routespec):
         else:
             bits = int(bits)
     else:
-        netparts = map(int, routespec.split('.'))
+        netparts = list(map(int, routespec.split('.')))
         bits = len(netparts) * 8
         while len(netparts) < 4:
             netparts.append(0)
@@ -885,14 +885,14 @@ Cookie: MRHSession=%s\r
     for i in range(5):
         try:
             import struct
-            ssl_socket = proxy_connect(tunnel_host, tunnel_port)
-            ssl_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, True)
-            ssl_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, struct.pack('LL', 10, 0))
-            ssl = socket.ssl(ssl_socket)
-            ssl.write(request)
-            initial_data = ssl.read(1)
+            unwrapped_socket = proxy_connect(tunnel_host, tunnel_port)
+            unwrapped_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, True)
+            unwrapped_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, struct.pack('LL', 10, 0))
+            ssl_socket = wrap_socket(unwrapped_socket)
+            ssl_socket.write(request.encode('utf-8'))
+            initial_data = ssl_socket.read(1)
             break
-        except socket.sslerror, e:
+        except ssl.SSLError as e:
             # Sometimes the server seems to respond with "EOF occurred in violation of protocol"
             # instead of establishing the connection. Try to deal with this by retrying...
             if e.args[0] != 8:
@@ -998,7 +998,7 @@ Cookie: MRHSession=%s\r
             platform.setup_dns(iface_name, serviceid,
                                params['DNS0'].split(','),
                                params['DNSSuffix0'].split(' '), revdns_domains, override_gateway)
-        print "VPN link is up!"
+        print("VPN link is up!")
 
     try:
         run_event_loop(pppd_fd, ssl_socket, ssl, logpipe_r, ppp_ip_up)
@@ -1014,7 +1014,7 @@ Cookie: MRHSession=%s\r
 
 
 def usage(exename, s):
-    print >> s, "Usage: %s [--skip-dns] [--skip-routes] [--session=sessionid] [--{http,socks5}-proxy=host:port] [[user@]host]" % exename
+    print("Usage: %s [--skip-dns] [--skip-routes] [--session=sessionid] [--{http,socks5}-proxy=host:port] [[user@]host]" % exename)
 
 
 def get_prefs():
@@ -1031,7 +1031,7 @@ def write_prefs(line):
         f = open(os.path.expanduser(CONFIG_FILE), 'w')
         f.write(line)
     except:
-        print "Couldn't write prefs file: %s" % CONFIG_FILE
+        print("Couldn't write prefs file: %s" % CONFIG_FILE)
 
 
 # 2.3.5 or higher is required because of this (2.2.X ought to work too, but I've not tested it):
@@ -1118,7 +1118,7 @@ def main(argv):
     params = None
 
     if session is None and old_session is not None:
-        print "Trying old session..."
+        print("Trying old session...")
         menu_number = get_vpn_menu_number(host, old_session)
         if menu_number is not None:
             params = get_VPN_params(host, old_session, menu_number)
@@ -1130,10 +1130,10 @@ def main(argv):
             dpassword = getpass.getpass("lan password for %s@%s? " % (user, host))
             session = do_login(host, user, password, dpassword)
             if session is not None:
-                print "Session id gotten:", session
+                print("Session id gotten:", session)
                 break
 
-        print "Getting params..."
+        print("Getting params...")
         menu_number = get_vpn_menu_number(host, session)
         if menu_number is None:
             sys.stderr.write("Unable to find the 'Network Access' entry in main menu. Do you have VPN access?\n")
@@ -1142,19 +1142,19 @@ def main(argv):
         params = get_VPN_params(host, session, menu_number)
 
     if params is None:
-        print "Couldn't get embed info. Sorry."
+        print("Couldn't get embed info. Sorry.")
         sys.exit(2)
 
     write_prefs('\0'.join(['', userhost, session]))
-    print "Got plugin params, execing vpn client"
+    print("Got plugin params, execing vpn client")
 
     try:
         execPPPd(params, skip_dns, skip_routes)
     except KeyboardInterrupt:
         pass
-    except SystemExit, se:
-        print se
-    print "Shut-down."
+    except SystemExit as se:
+        print(se)
+    print("Shut-down.")
 
 
 if __name__ == '__main__':
