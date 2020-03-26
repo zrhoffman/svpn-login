@@ -1,15 +1,11 @@
 #!/usr/bin/env python2
-"""Log in to a F5 Firepass SSL VPN from a command-line, without using F5's
-browser-plugin and associated junk. Yay.
+"""Log in to a F5 BIG-IP APM VPN from a command-line without using F5's
+proprietary junk. Yay.
 
-Works with OSX and linux, at the moment.
+Works with OSX and Linux
 
 TODO: verify server certificate. (requires using pyopenssl instead of
 socket.ssl)
-
-Author: James Y Knight <foom@fuhm.net>
-
-2008-12-06
 """
 import socket, re, sys, os, time, fcntl, select, errno, signal
 import getpass, getopt, types
