@@ -1066,7 +1066,7 @@ def main(argv):
     os.seteuid(os.getuid())
     user = getpass.getuser()
 
-    opts, args = getopt.getopt(argv[1:], "", ['http-proxy=', 'session=', 'socks5-proxy=', 'skip-routes', 'skip-dns'])
+    opts, args = getopt.getopt(argv[1:], "", ['http-proxy=', 'sessionid=', 'socks5-proxy=', 'skip-routes', 'skip-dns'])
 
     if len(args) > 1:
         usage(argv[0], sys.stderr)
