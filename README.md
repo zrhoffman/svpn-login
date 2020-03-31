@@ -16,10 +16,12 @@ the other hand, is probably not reasonably possible.
 
 The script requires [`ppp`](https://www.samba.org/ppp/). If you are on Linux, install it using your package manager. If you are on MacOS, you already have it.
 
+The script also requires [`netstat`](http://man7.org/linux/man-pages/man8/netstat.8.html), which is generally packaged as ```net-tools```.
+
 ## Basic Usage (supports two-factor authentication):
 
 ```bash
-sudo ./f5vpn-login.py --sessionid=0123456789abcdef0123456789abcdef host
+sudo ./f5vpn-login.py --sessionid=0123456789abcdef0123456789abcdef your.fully.qualified.hostname
 ```
 
 You can find the session ID by going to the VPN host in a web browser, logging in, and running this JavaScript in Developer Tools:
