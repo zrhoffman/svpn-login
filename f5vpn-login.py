@@ -390,6 +390,7 @@ def parse_hostport(host, default_port=0):
     else:
         ip = ipport[0]
         port = int(ipport[1])
+    ip = socket.gethostbyname(ip)
     return ip, port
 
 
