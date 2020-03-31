@@ -1014,7 +1014,7 @@ Cookie: MRHSession=%s\r
 
 
 def usage(exename, s):
-    print("Usage: %s [--skip-dns] [--skip-routes] [--session=sessionid] [--{http,socks5}-proxy=host:port] [[user@]host]" % exename)
+    print("Usage: %s [--skip-dns] [--skip-routes] [--sessionid=sessionid] [--{http,socks5}-proxy=host:port] [[user@]host]" % exename)
 
 
 def get_prefs():
@@ -1109,7 +1109,7 @@ def main(argv):
             skip_dns = True
         elif opt in ('--skip-routes'):
             skip_routes = True
-        elif opt in ('--session'):
+        elif opt in ('--sessionid'):
             session = val
         else:
             sys.stderr.write("Unknown option: %s\n" % opt)
