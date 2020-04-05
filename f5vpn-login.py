@@ -402,7 +402,10 @@ def send_request(host, request):
     data = ''.encode('utf-8')
     while 1:
         try:
-            data += ssl_socket.read(1)
+            bytes = ssl_socket.read(1)
+            if len(bytes) == 0:
+                break
+            data += bytes
         except (socket.error, ssl.SSLError):
             break
     # print data
