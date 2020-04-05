@@ -500,7 +500,7 @@ Host: %(host)s\r
 """ % dict(host=host, session=session)
     result = send_request(host, request).decode('utf-8')
 
-    if re.search('HTTP/1.1 302 Found', result):
+    if re.search('HTTP/[0-9.]+ 302( Found)?', result):
         # a redirect to the login page.
         sys.stderr.write("Old session no longer valid.\n")
         return None
