@@ -30,7 +30,7 @@ You can find the session ID by going to the VPN host in a web browser, logging i
 document.cookie.match(/MRHSession=(.*?); /)[1]
 ```
 
-If your organization does not use 2FA and you are able to log in with your just your username and password:
+If your organization does not use 2FA and you are able to log in with just your username and password:
 
 ```bash
 sudo ./f5vpn-login.py user@host
