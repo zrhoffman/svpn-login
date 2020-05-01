@@ -571,7 +571,8 @@ Host: %(host)s\r
         matches = list(re.finditer("document.writeln\('(version=[^)]*)'\)", result))
 
     if not matches:
-        xml_match = re.search(pattern=r'<\?xml.*<favorite.*<object\s+ID="ur_Host".+?</favorite>', string=result, flags=re.DOTALL)
+        xml_match = re.search(pattern=r'<\?xml.*<favorite.*<object\s+ID="ur_Host".+?</favorite>', string=result,
+                              flags=re.DOTALL)
         if xml_match is not None:
             paramsDict = decode_xml_params(xml_match.group(0))
             return paramsDict
@@ -592,6 +593,7 @@ Host: %(host)s\r
     # print paramsDict
     return paramsDict
 
+
 def decode_xml_params(xml_param_str):
     paramsDict = {}
     from xml.dom.minidom import parseString, Element
@@ -606,6 +608,7 @@ def decode_xml_params(xml_param_str):
         paramsDict[element.tagName] = value
 
     return paramsDict
+
 
 def decode_params(paramsStr):
     paramsDict = {}
@@ -683,8 +686,8 @@ def run_event_loop(pppd_fd, ssl_socket, ssl, logpipe_r, ppp_ip_up):
     def sigusr1(sig, frame):
         sys.stderr.write(
             "ssl_write_blocked_on_read=%r, ssl_read_blocked_on_write=%r, data_to_pppd=%r, data_to_ssl=%r, data_to_ssl_buf2=%r, time_since_last_activity=%r\n" % (
-            ssl_write_blocked_on_read, ssl_read_blocked_on_write, data_to_pppd, data_to_ssl, data_to_ssl_buf2,
-            time.time() - last_activity_time))
+                ssl_write_blocked_on_read, ssl_read_blocked_on_write, data_to_pppd, data_to_ssl, data_to_ssl_buf2,
+                time.time() - last_activity_time))
 
     signal.signal(signal.SIGUSR1, sigusr1)
 
@@ -1021,7 +1024,8 @@ Cookie: MRHSession=%s\r
 
 
 def usage(exename, s):
-    print("Usage: %s [--skip-dns] [--skip-routes] [--sessionid=sessionid] [--{http,socks5}-proxy=host:port] [[user@]host]" % exename)
+    print(
+        "Usage: %s [--skip-dns] [--skip-routes] [--sessionid=sessionid] [--{http,socks5}-proxy=host:port] [[user@]host]" % exename)
 
 
 def get_prefs():
