@@ -18,7 +18,7 @@ try:
 except ImportError:
     socks = None
 
-PPPD_PATH = "/usr/sbin/pppd"
+SVPN_PATH = "/usr/sbin/svpn"
 
 CONFIG_FILE = "~/.f5vpn-login.conf"
 
@@ -300,7 +300,7 @@ class ResolvConfHelperDNSMixin:
 
         # We append tun- to the interface so the proper record order is
         # established with the resolvconf distribution.  Since we're essentially
-        # using ppp for the same reason as most people would use tun, this
+        # using svpn for the same reason as most people would use tun, this
         # should be okay
         self.iface_name = iface_name
         cmd = "nameserver %s\nsearch %s\n" % (' '.join(dns_servers), ' '.join(dns_domains))
@@ -624,8 +624,8 @@ def decode_params(paramsStr):
 
 
 class LogWatcher:
-    """Collect (iface_name, tty, local_ip, remote_ip) from the ppp log messages
-    and call ppp_ip_up when they've all arrived."""
+    """Collect (iface_name, tty, local_ip, remote_ip) from the svpn log messages
+    and call svpn_ip_up when they've all arrived."""
 
     collected_log = ''
     iface_name = tty = remote_ip = local_ip = None
@@ -640,7 +640,7 @@ class LogWatcher:
             return match.group(1)
 
     def process(self, logmsg):
-        print("PPPD LOG: %r" % logmsg)
+        print("SVPN LOG: %r" % logmsg)
 
         self.collected_log += logmsg
 
@@ -671,50 +671,50 @@ def set_keepalive_host(host):
     keepalive_socket.setblocking(0)
 
 
-def run_event_loop(pppd_fd, ssl_socket, ssl, logpipe_r, ppp_ip_up):
+def run_event_loop(svpn_fd, ssl_socket, ssl, logpipe_r, svpn_ip_up):
     ssl_socket.setblocking(0)
-    set_non_blocking(pppd_fd)
+    set_non_blocking(svpn_fd)
     set_non_blocking(logpipe_r)
 
     # Tiny little event-loop: don't try this at home.
     ssl_write_blocked_on_read = False
     ssl_read_blocked_on_write = False
-    data_to_pppd = ''
+    data_to_svpn = ''
     data_to_ssl = ''
     data_to_ssl_buf2 = ''
 
     def sigusr1(sig, frame):
         sys.stderr.write(
-            "ssl_write_blocked_on_read=%r, ssl_read_blocked_on_write=%r, data_to_pppd=%r, data_to_ssl=%r, data_to_ssl_buf2=%r, time_since_last_activity=%r\n" % (
-                ssl_write_blocked_on_read, ssl_read_blocked_on_write, data_to_pppd, data_to_ssl, data_to_ssl_buf2,
+            "ssl_write_blocked_on_read=%r, ssl_read_blocked_on_write=%r, data_to_svpn=%r, data_to_ssl=%r, data_to_ssl_buf2=%r, time_since_last_activity=%r\n" % (
+                ssl_write_blocked_on_read, ssl_read_blocked_on_write, data_to_svpn, data_to_ssl, data_to_ssl_buf2,
                 time.time() - last_activity_time))
 
     signal.signal(signal.SIGUSR1, sigusr1)
 
-    logwatcher = LogWatcher(ppp_ip_up)
+    logwatcher = LogWatcher(svpn_ip_up)
 
     last_activity_time = time.time()
 
     while 1:
         reads = [logpipe_r]
         writes = []
-        # try to write data to pppd if pending, otherwise read more data from ssl
-        if data_to_pppd:
-            writes.append(pppd_fd)
+        # try to write data to svpn if pending, otherwise read more data from ssl
+        if data_to_svpn:
+            writes.append(svpn_fd)
         else:
             if ssl_read_blocked_on_write:
                 writes.append(ssl_socket)
             else:
                 reads.append(ssl_socket)
 
-        # Conversely, write data to ssl if pending, otherwise read more data from pppd
+        # Conversely, write data to ssl if pending, otherwise read more data from svpn
         if data_to_ssl:
             if ssl_write_blocked_on_read:
                 reads.append(ssl_socket)
             else:
                 writes.append(ssl_socket)
         else:
-            reads.append(pppd_fd)
+            reads.append(svpn_fd)
 
         if keepalive_socket:
             timeout = max(last_activity_time + KEEPALIVE_TIMEOUT - time.time(), 0)
@@ -751,24 +751,24 @@ def run_event_loop(pppd_fd, ssl_socket, ssl, logpipe_r, ppp_ip_up):
             if se.args[0] not in (errno.EAGAIN, errno.EINTR):
                 raise
 
-        # Read data from pppd
+        # Read data from svpn
         if not data_to_ssl:
             try:
-                data_to_ssl = os.read(pppd_fd, 10000)
+                data_to_ssl = os.read(svpn_fd, 10000)
                 if not data_to_ssl:  # EOF
-                    print("EOF on pppd")
+                    print("EOF on svpn")
                     break
-                # print "READ PPPD: %r" % data_to_ssl
+                # print "READ SVPN: %r" % data_to_ssl
             except OSError as se:
                 if se.args[0] not in (errno.EAGAIN, errno.EINTR):
                     raise
 
         # Read data from SSL
-        if not data_to_pppd:
+        if not data_to_svpn:
             try:
                 ssl_read_blocked_on_write = False
-                data_to_pppd = ssl_socket.read(1)
-                if not data_to_pppd:  # EOF
+                data_to_svpn = ssl_socket.read(1)
+                if not data_to_svpn:  # EOF
                     print("EOF on ssl")
                     break
                 last_activity_time = time.time()
@@ -779,14 +779,14 @@ def run_event_loop(pppd_fd, ssl_socket, ssl, logpipe_r, ppp_ip_up):
                     ssl_read_blocked_on_write = True
                 else:
                     raise
-            # print "READ SSL: %r" % data_to_pppd
+            # print "READ SSL: %r" % data_to_svpn
 
-        # Write data to pppd
-        if data_to_pppd:
+        # Write data to svpn
+        if data_to_svpn:
             try:
-                num_written = os.write(pppd_fd, data_to_pppd)
-                # print "WROTE PPPD: %r" % data_to_pppd[:num_written]
-                data_to_pppd = data_to_pppd[num_written:]
+                num_written = os.write(svpn_fd, data_to_svpn)
+                # print "WROTE SVPN: %r" % data_to_svpn[:num_written]
+                data_to_svpn = data_to_svpn[num_written:]
             except OSError as se:
                 if se.args[0] not in (errno.EAGAIN, errno.EINTR):
                     raise
@@ -817,12 +817,12 @@ def run_event_loop(pppd_fd, ssl_socket, ssl, logpipe_r, ppp_ip_up):
             # print "WROTE SSL: %r" % data_to_ssl[:num_written]
 
 
-def shutdown_pppd(pid):
+def shutdown_svpn(pid):
     res_pid, result = os.waitpid(pid, os.WNOHANG)
     if res_pid and result != 0:
-        sys.stdout.write("PPPd exited unexpectedly with result %s\n" % result)
+        sys.stdout.write("SVPN exited unexpectedly with result %s\n" % result)
     else:
-        sys.stdout.write("Shutting down pppd, please wait...\n")
+        sys.stdout.write("Shutting down svpn, please wait...\n")
         os.kill(pid, signal.SIGTERM)
         os.waitpid(pid, 0)
 
@@ -881,7 +881,7 @@ def routespec_to_revdns(netparts, bits):
                 for n in range(start_addr, start_addr + 2 ** (remaining_bits))]
 
 
-def execPPPd(params, skip_dns=False, skip_routes=False):
+def execSVPN(params, skip_dns=False, skip_routes=False):
     tunnel_host = params['tunnel_host0']
     tunnel_port = int(params['tunnel_port0'])
 
@@ -910,14 +910,14 @@ Cookie: MRHSession=%s\r
             sys.stderr.write("VPN socket unexpectedly closed during connection setup, retrying (%d/5)...\n" % (i + 1))
 
     # Make new PTY
-    (pppd_fd, slave_pppd_fd) = os.openpty()
+    (svpn_fd, slave_svpn_fd) = os.openpty()
 
     # Make log pipe
     logpipe_r, logpipe_w = os.pipe()
 
     # We need to first add an explicit route for the VPN server with the
     # /current/ default gateway. The default gw will automatically be set by
-    # pppd.
+    # svpn.
     override_gateway = True
     if override_gateway:
         # FIXME: This is a total hack...and incorrect in some cases, too.  But
@@ -942,10 +942,10 @@ Cookie: MRHSession=%s\r
     if pid == 0:
         os.close(ssl_socket.fileno())
         # Setup new controlling TTY
-        os.close(pppd_fd)
+        os.close(svpn_fd)
         os.setsid()
-        os.dup2(slave_pppd_fd, 0)
-        os.close(slave_pppd_fd)
+        os.dup2(slave_svpn_fd, 0)
+        os.close(slave_svpn_fd)
 
         # setup log pipe
         os.dup2(logpipe_w, 4)
@@ -956,8 +956,8 @@ Cookie: MRHSession=%s\r
         os.seteuid(0)
         os.setuid(0)
 
-        # Run pppd
-        args = [PPPD_PATH, 'logfd', '4', 'noauth', 'nodetach',
+        # Run svpn
+        args = [SVPN_PATH, 'logfd', '4', 'noauth', 'nodetach',
                 'crtscts', 'passive', 'ipcp-accept-local', 'ipcp-accept-remote',
                 'nodeflate', 'novj', 'local', '+ipv6']
 
@@ -970,11 +970,11 @@ Cookie: MRHSession=%s\r
             args.extend(['serviceid', serviceid])
 
         try:
-            os.execv(PPPD_PATH, args)
+            os.execv(SVPN_PATH, args)
         except:
             os._exit(127)
 
-    os.close(slave_pppd_fd)
+    os.close(slave_svpn_fd)
     os.close(logpipe_w)
 
     def setup_route(iface_name, local_ip, revdns_domains):
@@ -983,7 +983,7 @@ Cookie: MRHSession=%s\r
             platform.setup_route(iface_name, local_ip, '.'.join(map(str, net)), bits, 'add')
             revdns_domains.extend(routespec_to_revdns(net, bits))
 
-    def ppp_ip_up(iface_name, tty, local_ip, remote_ip):
+    def svpn_ip_up(iface_name, tty, local_ip, remote_ip):
         revdns_domains = []
         if params.get('LAN0'):
             if not skip_routes:
@@ -1011,11 +1011,11 @@ Cookie: MRHSession=%s\r
         print("VPN link is up!")
 
     try:
-        run_event_loop(pppd_fd, ssl_socket, ssl, logpipe_r, ppp_ip_up)
+        run_event_loop(svpn_fd, ssl_socket, ssl, logpipe_r, svpn_ip_up)
     finally:
         if params.get('DNS0'):
             platform.teardown_dns()
-        as_root(shutdown_pppd, pid)
+        as_root(shutdown_svpn, pid)
         if override_gateway:
             try:
                 platform.setup_route(default_interface, gw_ip, tunnel_ip, 32, 'delete')
@@ -1160,7 +1160,7 @@ def main(argv):
     print("Got plugin params, execing vpn client")
 
     try:
-        execPPPd(params, skip_dns, skip_routes)
+        execSVPN(params, skip_dns, skip_routes)
     except KeyboardInterrupt:
         pass
     except SystemExit as se:
