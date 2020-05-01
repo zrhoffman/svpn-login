@@ -533,14 +533,17 @@ Host: %(host)s\r
     # pp.pprint(favs)
 
     # let the user select which vpn connection they'd like to use...
-    selected_fav = -1
-    while selected_fav < 0 or selected_fav > len(favs) - 1:
-        print("Select VPN connection:")
+    if len(favs) == 1:
+        selected_fav = 0
+    else:
+        selected_fav = -1
+        while selected_fav < 0 or selected_fav > len(favs) - 1:
+            print("Select VPN connection:")
 
-        for i, v in enumerate(favs):
-            print(str(i) + ") " + v['name'])
+            for i, v in enumerate(favs):
+                print(str(i) + ") " + v['name'])
 
-        selected_fav = int(input())
+            selected_fav = int(input())
 
     print("Connecting to " + favs[selected_fav]['name'])
 
