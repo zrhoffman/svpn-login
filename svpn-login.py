@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Log in to a F5 BIG-IP APM VPN from a command-line without using F5's
+"""Log in to a F5 BIG-IP APM VPN from a command-line using F5's
 proprietary junk. Yay.
 
 Works with OSX and Linux
@@ -20,7 +20,7 @@ except ImportError:
 
 SVPN_PATH = "/usr/sbin/svpn"
 
-CONFIG_FILE = "~/.f5vpn-login.conf"
+CONFIG_FILE = '~/.svpn-login.conf'
 
 KEEPALIVE_TIMEOUT = 60 * 10
 
@@ -186,7 +186,7 @@ class DarwinPlatform(Platform):
             run_as_root(['/usr/sbin/scutil'], stdin=config)
         else:
             def setup_helper():
-                sc = SystemConfiguration.SCDynamicStoreCreate(None, "f5vpn-login", None, None)
+                sc = SystemConfiguration.SCDynamicStoreCreate(None, "svpn-login", None, None)
                 d = SystemConfiguration.NSMutableDictionary.new()
                 d[u'ServerAddresses'] = dns_servers
                 if override_gateway:
