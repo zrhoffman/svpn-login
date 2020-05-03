@@ -672,72 +672,9 @@ def keepalive():
                 break
 
 
-def shutdown_svpn(pid):
-    res_pid, result = os.waitpid(pid, os.WNOHANG)
-    if res_pid and result != 0:
-        sys.stdout.write("SVPN exited unexpectedly with result %s\n" % result)
-    else:
-        sys.stdout.write("Shutting down svpn, please wait...\n")
-        os.kill(pid, signal.SIGTERM)
-        os.waitpid(pid, 0)
-
-
-mask2bits = {}
-for x in range(33):
-    mask2bits[2 ** 32 - 2 ** (32 - x)] = x
-
-
-def parse_net_bits(routespec):
-    # This routine parses the following formats:
-    # w.x.y.z/numbits
-    # w.x.y.z/A.B.C.D
-    # w[.x[.y[.z]]] (netmask implicit in number of .s)
-    if '/' in routespec:
-        net, bits = routespec.split('/', 1)
-        netparts = list(map(int, net.split('.')))
-        while len(netparts) < 4:
-            netparts.append(0)
-
-        if '.' in bits:
-            netmaskparts = list(map(int, bits.split('.')))
-            netmask = 0
-            for n in netmaskparts:
-                netmask = netmask * 256 + n
-            netmask *= 256 ** (4 - len(netmaskparts))
-
-            bits = mask2bits.get(netmask)
-            if bits is None:
-                raise Exception("Non-contiguous netmask in routespec: %s\n" % (routespec,))
-        else:
-            bits = int(bits)
-    else:
-        netparts = list(map(int, routespec.split('.')))
-        bits = len(netparts) * 8
-        while len(netparts) < 4:
-            netparts.append(0)
-
-    return netparts, bits
-
-
-def routespec_to_revdns(netparts, bits):
-    domain = 'in-addr.arpa'
-    i = 0
-    while bits >= 8:
-        domain = str(netparts[i]) + '.' + domain
-        bits -= 8
-        i += 1
-
-    if bits == 0:
-        return [domain]
-    else:
-        remaining_bits = 8 - bits
-        start_addr = netparts[i] & ~(2 ** remaining_bits - 1)
-        return [(str(n) + '.' + domain)
-                for n in range(start_addr, start_addr + 2 ** (remaining_bits))]
-
-
 def execSVPN(query_string: str):
-    returncode = subprocess.run([SVPN_PATH], shell=True, check=True, input=query_string.encode('utf-8'), capture_output=True).returncode
+    returncode = subprocess.run([SVPN_PATH], shell=True, check=True, input=query_string.encode('utf-8'),
+                                capture_output=True).returncode
     print('SVPN has exited with a status of %i.' % returncode)
 
 
@@ -762,13 +699,6 @@ def write_prefs(line):
     except:
         print("Couldn't write prefs file: %s" % CONFIG_FILE)
 
-
-# 2.3.5 or higher is required because of this (2.2.X ought to work too, but I've not tested it):
-#     ------------------------------------------------------------------------
-#     r37117 | doko | 2004-08-24 17:48:15 -0400 (Tue, 24 Aug 2004) | 4 lines
-#     [Patch #945642] Fix non-blocking SSL sockets, which blocked on reads/writes in Python 2.3.
-#      Taken from HEAD, tested as part of the unstable and testing Debian packages since May on
-#      various architectures.
 
 def main(argv):
     global proxy_addr
