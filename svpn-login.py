@@ -33,14 +33,6 @@ def set_non_blocking(fd):
     fcntl.fcntl(fd, fcntl.F_SETFL, flags)
 
 
-def as_root(fn, *args, **kwargs):
-    try:
-        os.seteuid(0)
-        return fn(*args, **kwargs)
-    finally:
-        os.seteuid(os.getuid())
-
-
 def sts_result(sts):
     if os.WIFSIGNALED(sts):
         return -os.WTERMSIG(sts)
@@ -50,7 +42,7 @@ def sts_result(sts):
         raise os.error("Not signaled or exited???")
 
 
-def run_as_root(args, stdin=None):
+def run(args, stdin=None):
     if isinstance(stdin, str):
         stdin = stdin.encode('utf-8')
     if stdin is not None:
@@ -66,8 +58,6 @@ def run_as_root(args, stdin=None):
             os.close(pipe_r)
             os.close(pipe_w)
 
-        os.seteuid(0)
-        os.setuid(0)
         try:
             os.execv(args[0], args)
         except:
@@ -140,7 +130,7 @@ class DarwinPlatform(Platform):
             args += ['-interface', ifname]
         else:
             args += [gateway_ip]
-        run_as_root(args)
+        run(args)
 
     @staticmethod
     def load_SystemConfigurationFramework():
@@ -183,7 +173,7 @@ class DarwinPlatform(Platform):
                 config += "d.add SupplementalMatchDomains * %s\n" % ' '.join(dns_domains)
             config += "set State:/Network/Service/%s/DNS\n" % service_id
 
-            run_as_root(['/usr/sbin/scutil'], stdin=config)
+            run(['/usr/sbin/scutil'], stdin=config)
         else:
             def setup_helper():
                 sc = SystemConfiguration.SCDynamicStoreCreate(None, "svpn-login", None, None)
@@ -195,7 +185,7 @@ class DarwinPlatform(Platform):
                     d[u'SupplementalMatchDomains'] = dns_domains + revdns_domains
                 SystemConfiguration.SCDynamicStoreSetValue(sc, 'State:/Network/Service/%s/DNS' % service_id, d)
 
-            as_root(setup_helper)
+            setup_helper()
 
 
 class LinuxPlatform(Platform):
@@ -232,9 +222,9 @@ class LinuxPlatform(Platform):
             host_or_net = "-host"
         else:
             host_or_net = "-net"
-        run_as_root(['/sbin/route', action, host_or_net,
-                     "%s/%s" % (net, bits),
-                     'gw', gateway_ip, 'dev', ifname])
+        run(['/sbin/route', action, host_or_net,
+             "%s/%s" % (net, bits),
+             'gw', gateway_ip, 'dev', ifname])
 
 
 class ManualFrobbingDNSMixin:
@@ -269,12 +259,12 @@ class ManualFrobbingDNSMixin:
             os.rename('/etc/resolv.conf', '/etc/resolv.conf.f5_bak')
             open('/etc/resolv.conf', 'w').write('\n'.join(new_resolv_conf))
 
-        as_root(_create_file)
+        _create_file()
 
         self.resolv_conf_timestamp = os.stat('/etc/resolv.conf').st_mtime
 
     def teardown_dns(self):
-        as_root(self._teardown_dns)
+        self._teardown_dns()
 
     def _teardown_dns(self):
         try:
@@ -304,14 +294,14 @@ class ResolvConfHelperDNSMixin:
         # should be okay
         self.iface_name = iface_name
         cmd = "nameserver %s\nsearch %s\n" % (' '.join(dns_servers), ' '.join(dns_domains))
-        run_as_root(['/sbin/resolvconf', '-a', 'tun-%s' % iface_name], stdin=cmd)
+        run(['/sbin/resolvconf', '-a', 'tun-%s' % iface_name], stdin=cmd)
 
     def teardown_dns(self):
-        as_root(self._teardown_dns)
+        self._teardown_dns()
 
     def _teardown_dns(self):
         try:
-            run_as_root(["/sbin/resolvconf", '-d', 'tun-%s' % self.iface_name])
+            run(["/sbin/resolvconf", '-d', 'tun-%s' % self.iface_name])
         except:
             pass
 
@@ -1064,13 +1054,6 @@ def main(argv):
 
     if sys.version_info < (2, 3, 5):
         sys.stderr.write("Python 2.3.5 or later is required.\n")
-        sys.exit(1)
-
-    if os.geteuid() != 0:
-        sys.stderr.write("ERROR: \n")
-        sys.stderr.write(
-            "  This script must be run as root. Preferably setuid (via companion .c\n"
-            "  program), but it'll work when invoked as root directly, too.\n")
         sys.exit(1)
 
     # Set effective uid to userid; will become root as necessary
