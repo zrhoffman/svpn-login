@@ -17,6 +17,7 @@ from base64 import b16encode
 from ssl import wrap_socket
 
 import requests
+from urllib3.exceptions import NewConnectionError
 
 try:
     import socks
@@ -664,12 +665,16 @@ class LogWatcher:
             self.ip_up(self.iface_name, self.tty, self.local_ip, self.remote_ip)
 
 
-def keepalive():
-    while 1:
-        while True:
-            time.sleep(1)
-            if requests.get('http://localhost:44444').status_code != 200:
-                break
+def keepalive(host: str, port: str):
+    keepalive_url = 'http://%(host)s:%(port)s' % dict(host=host, port=port)
+    try:
+        while 1:
+            while True:
+                time.sleep(1)
+                if requests.get(keepalive_url).status_code != 200:
+                    break
+    except Exception:
+        print('Ending keepalive to %s' % keepalive_url)
 
 
 def execSVPN(query_string: str):
@@ -804,7 +809,7 @@ def main(argv):
     print("Got plugin params, execing vpn client")
 
     try:
-        threading.Thread(target=keepalive).start()
+        threading.Thread(target=keepalive, args=[params['host0'], params['port0']]).start()
         execSVPN(query_string)
     except KeyboardInterrupt:
         pass
