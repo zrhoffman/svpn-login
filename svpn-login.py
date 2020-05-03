@@ -7,22 +7,25 @@ Works with OSX and Linux
 TODO: verify server certificate. (requires using pyopenssl instead of
 socket.ssl)
 """
-import socket, re, sys, os, time, fcntl, select, errno, signal
+import socket, re, sys, os, time, fcntl, signal
 import getpass, getopt, types
 import string
 import ssl
+import subprocess
+import threading
+from base64 import b16encode
 from ssl import wrap_socket
+
+import requests
 
 try:
     import socks
 except ImportError:
     socks = None
 
-SVPN_PATH = "/usr/sbin/svpn"
+SVPN_PATH = 'svpn'
 
 CONFIG_FILE = '~/.svpn-login.conf'
-
-KEEPALIVE_TIMEOUT = 60 * 10
 
 proxy_addr = None
 
@@ -613,6 +616,16 @@ def decode_params(paramsStr):
     return paramsDict
 
 
+def encode_hex_query_string(params: dict) -> str:
+    param_index = 0
+    query_string = ''
+    for key, value in params.items():
+        hex_string = b16encode((key + '=' + value).encode('utf-8')).decode('utf-8')
+        query_string += 'q%(index)d=%(hex)s' % dict(index=param_index, hex=hex_string) + '&'
+        param_index += 1
+    return query_string
+
+
 class LogWatcher:
     """Collect (iface_name, tty, local_ip, remote_ip) from the svpn log messages
     and call svpn_ip_up when they've all arrived."""
@@ -651,160 +664,12 @@ class LogWatcher:
             self.ip_up(self.iface_name, self.tty, self.local_ip, self.remote_ip)
 
 
-keepalive_socket = None
-
-
-def set_keepalive_host(host):
-    global keepalive_socket
-    keepalive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    keepalive_socket.connect((host, 7))
-    keepalive_socket.setblocking(0)
-
-
-def run_event_loop(svpn_fd, ssl_socket, ssl, logpipe_r, svpn_ip_up):
-    ssl_socket.setblocking(0)
-    set_non_blocking(svpn_fd)
-    set_non_blocking(logpipe_r)
-
-    # Tiny little event-loop: don't try this at home.
-    ssl_write_blocked_on_read = False
-    ssl_read_blocked_on_write = False
-    data_to_svpn = ''
-    data_to_ssl = ''
-    data_to_ssl_buf2 = ''
-
-    def sigusr1(sig, frame):
-        sys.stderr.write(
-            "ssl_write_blocked_on_read=%r, ssl_read_blocked_on_write=%r, data_to_svpn=%r, data_to_ssl=%r, data_to_ssl_buf2=%r, time_since_last_activity=%r\n" % (
-                ssl_write_blocked_on_read, ssl_read_blocked_on_write, data_to_svpn, data_to_ssl, data_to_ssl_buf2,
-                time.time() - last_activity_time))
-
-    signal.signal(signal.SIGUSR1, sigusr1)
-
-    logwatcher = LogWatcher(svpn_ip_up)
-
-    last_activity_time = time.time()
-
+def keepalive():
     while 1:
-        reads = [logpipe_r]
-        writes = []
-        # try to write data to svpn if pending, otherwise read more data from ssl
-        if data_to_svpn:
-            writes.append(svpn_fd)
-        else:
-            if ssl_read_blocked_on_write:
-                writes.append(ssl_socket)
-            else:
-                reads.append(ssl_socket)
-
-        # Conversely, write data to ssl if pending, otherwise read more data from svpn
-        if data_to_ssl:
-            if ssl_write_blocked_on_read:
-                reads.append(ssl_socket)
-            else:
-                writes.append(ssl_socket)
-        else:
-            reads.append(svpn_fd)
-
-        if keepalive_socket:
-            timeout = max(last_activity_time + KEEPALIVE_TIMEOUT - time.time(), 0)
-        else:
-            timeout = None
-
-        # Run the select, woot
-        try:
-            reads, writes, exc = select.select(reads, writes, [], timeout)
-        except select.error as se:
-            if se.args[0] not in (errno.EAGAIN, errno.EINTR):
-                raise
-            continue  # loop back around to try again
-
-        if keepalive_socket and not reads and not writes:
-            # Returned from select because of timeout (probably)
-            if time.time() - last_activity_time > KEEPALIVE_TIMEOUT:
-                sys.stderr.write("Sending keepalive\n")
-                keepalive_socket.send('keepalive')
-
-        # print "SELECT GOT:", reads,writes,exc
-
-        # To simplify matters, don't bother with what select returned. Just try
-        # everything; it doesn't matter if it fails.
-
-        # Read data from log pipe
-        try:
-            logmsg = os.read(logpipe_r, 10000).decode('utf-8')
-            if not logmsg:  # EOF
-                print("EOF on logpipe_r")
+        while True:
+            time.sleep(1)
+            if requests.get('http://localhost:44444').status_code != 200:
                 break
-            logwatcher.process(logmsg)
-        except OSError as se:
-            if se.args[0] not in (errno.EAGAIN, errno.EINTR):
-                raise
-
-        # Read data from svpn
-        if not data_to_ssl:
-            try:
-                data_to_ssl = os.read(svpn_fd, 10000)
-                if not data_to_ssl:  # EOF
-                    print("EOF on svpn")
-                    break
-                # print "READ SVPN: %r" % data_to_ssl
-            except OSError as se:
-                if se.args[0] not in (errno.EAGAIN, errno.EINTR):
-                    raise
-
-        # Read data from SSL
-        if not data_to_svpn:
-            try:
-                ssl_read_blocked_on_write = False
-                data_to_svpn = ssl_socket.read(1)
-                if not data_to_svpn:  # EOF
-                    print("EOF on ssl")
-                    break
-                last_activity_time = time.time()
-            except ssl.SSLError as se:
-                if se.args[0] == ssl.SSL_ERROR_WANT_READ:
-                    pass
-                elif se.args[0] == ssl.SSL_ERROR_WANT_WRITE:
-                    ssl_read_blocked_on_write = True
-                else:
-                    raise
-            # print "READ SSL: %r" % data_to_svpn
-
-        # Write data to svpn
-        if data_to_svpn:
-            try:
-                num_written = os.write(svpn_fd, data_to_svpn)
-                # print "WROTE SVPN: %r" % data_to_svpn[:num_written]
-                data_to_svpn = data_to_svpn[num_written:]
-            except OSError as se:
-                if se.args[0] not in (errno.EAGAIN, errno.EINTR):
-                    raise
-
-        # Write data to SSL
-        if not data_to_ssl_buf2 and data_to_ssl:
-            # Write in SSL is not like unix write; you *must* call it with the
-            # same pointer as previously if it fails.  Otherwise, it'll raise a
-            # "bad write retry" error.
-            data_to_ssl_buf2 = data_to_ssl
-            data_to_ssl = ''
-
-        if data_to_ssl_buf2:
-            try:
-                ssl_write_blocked_on_read = False
-                num_written = ssl_socket.write(data_to_ssl_buf2)
-                # should always either write all data, or raise a WANT_*
-                assert num_written == len(data_to_ssl_buf2)
-                data_to_ssl_buf2 = ''
-                last_activity_time = time.time()
-            except ssl.SSLError as se:
-                if se.args[0] == ssl.SSL_ERROR_WANT_READ:
-                    ssl_write_blocked_on_read = True
-                elif se.args[0] == ssl.SSL_ERROR_WANT_WRITE:
-                    pass
-                else:
-                    raise
-            # print "WROTE SSL: %r" % data_to_ssl[:num_written]
 
 
 def shutdown_svpn(pid):
@@ -871,146 +736,9 @@ def routespec_to_revdns(netparts, bits):
                 for n in range(start_addr, start_addr + 2 ** (remaining_bits))]
 
 
-def execSVPN(params, skip_dns=False, skip_routes=False):
-    tunnel_host = params['tunnel_host0']
-    tunnel_port = int(params['tunnel_port0'])
-
-    serviceid = "f5vpn-%s" % tunnel_host
-
-    request = """GET /myvpn?sess=%s HTTP/1.0\r
-Cookie: MRHSession=%s\r
-\r
-""" % (params['Session_ID'], params['Session_ID'])
-
-    for i in range(5):
-        try:
-            import struct
-            unwrapped_socket = proxy_connect(tunnel_host, tunnel_port)
-            unwrapped_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, True)
-            unwrapped_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, struct.pack('LL', 10, 0))
-            ssl_socket = wrap_socket(unwrapped_socket)
-            ssl_socket.write(request.encode('utf-8'))
-            initial_data = ssl_socket.read(1)
-            break
-        except ssl.SSLError as e:
-            # Sometimes the server seems to respond with "EOF occurred in violation of protocol"
-            # instead of establishing the connection. Try to deal with this by retrying...
-            if e.args[0] != 8:
-                raise
-            sys.stderr.write("VPN socket unexpectedly closed during connection setup, retrying (%d/5)...\n" % (i + 1))
-
-    # Make new PTY
-    (svpn_fd, slave_svpn_fd) = os.openpty()
-
-    # Make log pipe
-    logpipe_r, logpipe_w = os.pipe()
-
-    # We need to first add an explicit route for the VPN server with the
-    # /current/ default gateway. The default gw will automatically be set by
-    # svpn.
-    override_gateway = True
-    if override_gateway:
-        # FIXME: This is a total hack...and incorrect in some cases, too.  But
-        # it'll work in the normal case where the VPN server isn't on your local
-        # subnet.  This should really be using some (platform-specific) method
-        # of finding the current route to tunnel_ip instead of assuming that's
-        # the default route.
-        tunnel_ip = ssl_socket.getpeername()[0]
-
-        default_route = os.popen("netstat -rn | grep '^0\.0\.0\.0' | head -n1").read().split()
-        gw_ip = default_route[1]
-        default_interface = default_route[-1]
-        sys.stderr.write("Detected current default route: %r\n" % gw_ip)
-        sys.stderr.write("Attempting to delete and override route to VPN server.\n")
-        try:
-            platform.setup_route(default_interface, gw_ip, tunnel_ip, 32, 'delete')
-        except:
-            pass
-        platform.setup_route(default_interface, gw_ip, tunnel_ip, 32, 'add')
-
-    pid = os.fork()
-    if pid == 0:
-        os.close(ssl_socket.fileno())
-        # Setup new controlling TTY
-        os.close(svpn_fd)
-        os.setsid()
-        os.dup2(slave_svpn_fd, 0)
-        os.close(slave_svpn_fd)
-
-        # setup log pipe
-        os.dup2(logpipe_w, 4)
-        os.close(logpipe_r)
-        os.close(logpipe_w)
-
-        # Become root
-        os.seteuid(0)
-        os.setuid(0)
-
-        # Run svpn
-        args = [SVPN_PATH, 'logfd', '4', 'noauth', 'nodetach',
-                'crtscts', 'passive', 'ipcp-accept-local', 'ipcp-accept-remote',
-                'nodeflate', 'novj', 'local', '+ipv6']
-
-        if override_gateway:
-            args.append('defaultroute')
-        else:
-            args.append('nodefaultroute')
-
-        if sys.platform == "darwin":
-            args.extend(['serviceid', serviceid])
-
-        try:
-            os.execv(SVPN_PATH, args)
-        except:
-            os._exit(127)
-
-    os.close(slave_svpn_fd)
-    os.close(logpipe_w)
-
-    def setup_route(iface_name, local_ip, revdns_domains):
-        for routespec in params['LAN0'].split(' '):
-            net, bits = parse_net_bits(routespec)
-            platform.setup_route(iface_name, local_ip, '.'.join(map(str, net)), bits, 'add')
-            revdns_domains.extend(routespec_to_revdns(net, bits))
-
-    def svpn_ip_up(iface_name, tty, local_ip, remote_ip):
-        revdns_domains = []
-        if params.get('LAN0'):
-            if not skip_routes:
-                if getattr(platform, 'wait_for_interface'):
-                    pid = os.fork()
-                    if pid != 0:
-                        # Become root
-                        os.seteuid(0)
-                        os.setuid(0)
-
-                        platform.wait_for_interface(iface_name)
-                        setup_route(iface_name, local_ip, revdns_domains)
-                        os.waitpid(pid, 0)
-                else:
-                    setup_route(iface_name, local_ip, revdns_domains)
-
-        # sending a packet to the "local" ip appears to actually send data
-        # across the connection, which is the desired behavior.
-        set_keepalive_host(local_ip)
-
-        if params.get('DNS0') and not skip_dns:
-            platform.setup_dns(iface_name, serviceid,
-                               params['DNS0'].split(','),
-                               params['DNSSuffix0'].split(' '), revdns_domains, override_gateway)
-        print("VPN link is up!")
-
-    try:
-        run_event_loop(svpn_fd, ssl_socket, ssl, logpipe_r, svpn_ip_up)
-    finally:
-        if params.get('DNS0'):
-            platform.teardown_dns()
-        as_root(shutdown_svpn, pid)
-        if override_gateway:
-            try:
-                platform.setup_route(default_interface, gw_ip, tunnel_ip, 32, 'delete')
-            except:
-                pass
+def execSVPN(query_string: str):
+    returncode = subprocess.run([SVPN_PATH], shell=True, check=True, input=query_string.encode('utf-8'), capture_output=True).returncode
+    print('SVPN has exited with a status of %i.' % returncode)
 
 
 def usage(exename, s):
@@ -1139,11 +867,15 @@ def main(argv):
         print("Couldn't get embed info. Sorry.")
         sys.exit(2)
 
+    params['browser_pid'] = str(os.getpid())
+    params['version'] = '2.9'
+    query_string = encode_hex_query_string(params)
     write_prefs('\0'.join(['', userhost, session]))
     print("Got plugin params, execing vpn client")
 
     try:
-        execSVPN(params, skip_dns, skip_routes)
+        threading.Thread(target=keepalive).start()
+        execSVPN(query_string)
     except KeyboardInterrupt:
         pass
     except SystemExit as se:
