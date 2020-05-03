@@ -804,6 +804,14 @@ def main(argv):
 
     params['browser_pid'] = str(os.getpid())
     params['version'] = '2.9'
+    if skip_dns:
+        for dns_key in ['DNS0', 'DNS6_0', 'DNSSuffix0', 'DNSRegisterConnection0', 'DNSUseDNSSuffixForRegistration0',
+                        'DNS_SPLIT0', 'EnforceDNSOrder0']:
+            del params[dns_key]
+    if skip_routes:
+        params['ExcludeSubnets0'] = params['LAN0']
+        params['ExcludeSubnets6_0'] = params['LAN6_0']
+
     query_string = encode_hex_query_string(params)
     write_prefs('\0'.join(['', userhost, session]))
     print("Got plugin params, execing vpn client")
