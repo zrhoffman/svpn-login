@@ -700,11 +700,10 @@ class LogWatcher:
 def keepalive(host: str, port: str):
     keepalive_url = 'http://%(host)s:%(port)s' % dict(host=host, port=port)
     try:
-        while 1:
-            while True:
-                time.sleep(1)
-                if requests.get(keepalive_url).status_code != 200:
-                    break
+        while True:
+            time.sleep(1)
+            if requests.get(keepalive_url).status_code != 200 and reconnect:
+                break
     except Exception:
         print('Ending keepalive to %s' % keepalive_url)
 
@@ -745,17 +744,16 @@ def write_prefs(line):
         print("Couldn't write prefs file: %s" % CONFIG_FILE)
 
 
-should_quit = False
+reconnect = True
 
 
 def signal_trap(signal, frame):
-    global should_quit
-    should_quit = True
+    global reconnect
+    reconnect = False
 
 
 def trap_signals():
-    global should_quit
-    should_quit = False
+    global reconnect
     signals = [
         signal.SIGHUP,
         signal.SIGINT,
@@ -800,6 +798,7 @@ def main(argv):
     old_session = None
     session = None
     userhost = None
+    global reconnect
     reconnect = True
     if prefs is not None:
         path, userhost, old_session = prefs.split('\0')
@@ -853,8 +852,7 @@ def main(argv):
 
     has_connected = False
     trap_signals()
-    global should_quit
-    while not (should_quit):
+    while True:
         if params is None:
             while session is None:
                 password = getpass.getpass("radius password for %s@%s? " % (user, host))
@@ -905,8 +903,7 @@ def main(argv):
         has_connected = True
         if not (reconnect):
             break
-        elif not (should_quit):
-            print('Restarting...')
+        print('Restarting...')
 
 
 if __name__ == '__main__':
