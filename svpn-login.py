@@ -719,12 +719,14 @@ def usage(exename, s):
     print(
         "Usage: %s [--skip-dns] [--skip-routes] [--sessionid=sessionid] [--{http,socks5}-proxy=host:port] [[user@]host]" % exename)
 
+
 def need_svpn(exename):
     print(
         """
 The F5 svpn executable is required in order to use %(exename)s. Follow the instructions in the %(exename)s README
 in order to get svpn, then try running %(exename)s again.
         """ % dict(exename=exename))
+
 
 def get_prefs():
     try:
@@ -741,6 +743,28 @@ def write_prefs(line):
         f.write(line)
     except:
         print("Couldn't write prefs file: %s" % CONFIG_FILE)
+
+
+should_quit = False
+
+
+def signal_trap(signal, frame):
+    global should_quit
+    should_quit = True
+
+
+def trap_signals():
+    global should_quit
+    should_quit = False
+    signals = [
+        signal.SIGHUP,
+        signal.SIGINT,
+        signal.SIGQUIT,
+        signal.SIGABRT,
+        signal.SIGTERM,
+    ]
+    for sig in signals:
+        signal.signal(sig, signal_trap)
 
 
 def main(argv):
@@ -765,7 +789,8 @@ def main(argv):
     os.seteuid(os.getuid())
     user = getpass.getuser()
 
-    opts, args = getopt.getopt(argv[1:], "", ['http-proxy=', 'sessionid=', 'socks5-proxy=', 'skip-routes', 'skip-dns'])
+    opts, args = getopt.getopt(argv[1:], "",
+                               ['http-proxy=', 'sessionid=', 'reconnect=', 'socks5-proxy=', 'skip-routes', 'skip-dns'])
 
     if len(args) > 1:
         usage(argv[0], sys.stderr)
@@ -775,6 +800,7 @@ def main(argv):
     old_session = None
     session = None
     userhost = None
+    reconnect = True
     if prefs is not None:
         path, userhost, old_session = prefs.split('\0')
 
@@ -810,6 +836,8 @@ def main(argv):
             skip_routes = True
         elif opt in ('--sessionid'):
             session = val
+        elif opt in ('--reconnect'):
+            reconnect = str(val).lower()[0] not in ('f', 'n', 0)
         else:
             sys.stderr.write("Unknown option: %s\n" % opt)
             sys.exit(1)
@@ -823,49 +851,62 @@ def main(argv):
             params = get_VPN_params(host, old_session, menu_number)
             session = old_session
 
-    if params is None:
-        while session is None:
-            password = getpass.getpass("radius password for %s@%s? " % (user, host))
-            dpassword = getpass.getpass("lan password for %s@%s? " % (user, host))
-            session = do_login(host, user, password, dpassword)
-            if session is not None:
-                print("Session id gotten:", session)
-                break
+    has_connected = False
+    trap_signals()
+    global should_quit
+    while not (should_quit):
+        if params is None:
+            while session is None:
+                password = getpass.getpass("radius password for %s@%s? " % (user, host))
+                dpassword = getpass.getpass("lan password for %s@%s? " % (user, host))
+                session = do_login(host, user, password, dpassword)
+                if session is not None:
+                    print("Session id gotten:", session)
+                    break
 
-        print("Getting params...")
-        menu_number = get_vpn_menu_number(host, session)
-        if menu_number is None:
-            sys.stderr.write("Unable to find the 'Network Access' entry in main menu. Do you have VPN access?\n")
-            sys.exit(1)
+            print("Getting params...")
+            menu_number = get_vpn_menu_number(host, session)
+            if menu_number is None:
+                if not (has_connected):
+                    sys.stderr.write(
+                        "Unable to find the 'Network Access' entry in main menu. Do you have VPN access?\n")
+                else:
+                    sys.stderr.write('VPN session has expired.')
+                sys.exit(1)
 
-        params = get_VPN_params(host, session, menu_number)
+            params = get_VPN_params(host, session, menu_number)
 
-    if params is None:
-        print("Couldn't get embed info. Sorry.")
-        sys.exit(2)
+        if params is None:
+            print("Couldn't get embed info. Sorry.")
+            sys.exit(2)
 
-    params['browser_pid'] = str(os.getpid())
-    params['version'] = '2.9'
-    if skip_dns:
-        for dns_key in ['DNS0', 'DNS6_0', 'DNSSuffix0', 'DNSRegisterConnection0', 'DNSUseDNSSuffixForRegistration0',
-                        'DNS_SPLIT0', 'EnforceDNSOrder0']:
-            del params[dns_key]
-    if skip_routes:
-        params['ExcludeSubnets0'] = params['LAN0']
-        params['ExcludeSubnets6_0'] = params['LAN6_0']
+        params['browser_pid'] = str(os.getpid())
+        params['version'] = '2.9'
+        if skip_dns:
+            for dns_key in ['DNS0', 'DNS6_0', 'DNSSuffix0', 'DNSRegisterConnection0', 'DNSUseDNSSuffixForRegistration0',
+                            'DNS_SPLIT0', 'EnforceDNSOrder0']:
+                del params[dns_key]
+        if skip_routes:
+            params['ExcludeSubnets0'] = params['LAN0']
+            params['ExcludeSubnets6_0'] = params['LAN6_0']
 
-    query_string = encode_hex_query_string(params)
-    write_prefs('\0'.join(['', userhost, session]))
-    print("Got plugin params, execing vpn client")
+        query_string = encode_hex_query_string(params)
+        write_prefs('\0'.join(['', userhost, session]))
+        print("Got plugin params, execing vpn client")
 
-    try:
-        threading.Thread(target=keepalive, args=[params['host0'], params['port0']]).start()
-        execSVPN(svpn_path, query_string)
-    except KeyboardInterrupt:
-        pass
-    except SystemExit as se:
-        print(se)
-    print("Shut-down.")
+        try:
+            threading.Thread(target=keepalive, args=[params['host0'], params['port0']]).start()
+            execSVPN(svpn_path, query_string)
+        except KeyboardInterrupt:
+            pass
+        except SystemExit as se:
+            print(se)
+        print("Shut-down.")
+        has_connected = True
+        if not (reconnect):
+            break
+        elif not (should_quit):
+            print('Restarting...')
 
 
 if __name__ == '__main__':
