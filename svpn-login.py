@@ -7,6 +7,7 @@ Works with OSX and Linux
 TODO: verify server certificate. (requires using pyopenssl instead of
 socket.ssl)
 """
+import distutils.spawn
 import socket, re, sys, os, time, fcntl, signal
 import getpass, getopt, types
 import string
@@ -14,7 +15,9 @@ import ssl
 import subprocess
 import threading
 from base64 import b16encode
+from platform import machine
 from ssl import wrap_socket
+from typing import Union
 
 import requests
 from urllib3.exceptions import NewConnectionError
@@ -24,7 +27,7 @@ try:
 except ImportError:
     socks = None
 
-SVPN_PATH = 'svpn'
+SVPN_NAME = 'svpn'
 
 CONFIG_FILE = '~/.svpn-login.conf'
 
@@ -81,6 +84,16 @@ class Platform:
     def __init__(self):
         self.ifconfig_path = None
 
+    @staticmethod
+    def return_first_path(paths) -> Union[str, None]:
+        for path in paths:
+            if os.path.exists(path):
+                return path
+        return None
+
+    def find_svpn(self) -> Union[str, None]:
+        pass
+
     def setup_route(self, ifname, gateway_ip, net, bits, action):
         pass
 
@@ -127,6 +140,18 @@ class DarwinPlatform(Platform):
             self.ifconfig_path = '/usr/bin/ifconfig'
         else:
             raise Exception("Couldn't find ifconfig command")
+
+    def get_svpn_path(self) -> Union[str, None]:
+        path = distutils.spawn.find_executable(SVPN_NAME)
+        if path:
+            return path
+        paths_to_check = [
+            '/Applications/F5 VPN.app/Contents/Helpers/svpn',
+            '/Library/Internet Plug-Ins/F5 SSL VPN Plugin.plugin/Contents/Helpers/svpn',
+            os.path.expanduser(
+                '~/Library/Internet Plug-Ins/F5 SSL VPN Plugin.plugin/Contents/Helpers/svpn'),
+            './svpn']
+        return self.return_first_path(paths_to_check)
 
     def setup_route(self, ifname, gateway_ip, net, bits, action):
         args = [self.route_path, action, '-net', "%s/%s" % (net, bits)]
@@ -195,6 +220,13 @@ class DarwinPlatform(Platform):
 class LinuxPlatform(Platform):
     def __init__(self):
         self.ifconfig_path = '/sbin/ifconfig'
+
+    def find_svpn(self) -> Union[str, None]:
+        path = distutils.spawn.find_executable(SVPN_NAME)
+        if path:
+            return path
+        paths_to_check = ['/opt/f5/vpn/svpn', '/usr/local/lib/F5Networks/SSLVPN/svpn_' + machine(), './svpn']
+        return self.return_first_path(paths_to_check)
 
     def wait_for_interface(self, iface_name):
         iface_up = False
@@ -677,8 +709,8 @@ def keepalive(host: str, port: str):
         print('Ending keepalive to %s' % keepalive_url)
 
 
-def execSVPN(query_string: str):
-    returncode = subprocess.run([SVPN_PATH], shell=True, check=True, input=query_string.encode('utf-8'),
+def execSVPN(svpn_path: str, query_string: str):
+    returncode = subprocess.run([svpn_path], shell=True, check=True, input=query_string.encode('utf-8'),
                                 capture_output=True).returncode
     print('SVPN has exited with a status of %i.' % returncode)
 
@@ -687,6 +719,12 @@ def usage(exename, s):
     print(
         "Usage: %s [--skip-dns] [--skip-routes] [--sessionid=sessionid] [--{http,socks5}-proxy=host:port] [[user@]host]" % exename)
 
+def need_svpn(exename):
+    print(
+        """
+The F5 svpn executable is required in order to use %(exename)s. Follow the instructions in the %(exename)s README
+in order to get svpn, then try running %(exename)s again.
+        """ % dict(exename=exename))
 
 def get_prefs():
     try:
@@ -707,6 +745,10 @@ def write_prefs(line):
 
 def main(argv):
     global proxy_addr
+    svpn_path = platform.find_svpn()
+    if svpn_path is None:
+        need_svpn(argv[0])
+        sys.exit(1)
 
     skip_dns = False
     skip_routes = False
@@ -818,7 +860,7 @@ def main(argv):
 
     try:
         threading.Thread(target=keepalive, args=[params['host0'], params['port0']]).start()
-        execSVPN(query_string)
+        execSVPN(svpn_path, query_string)
     except KeyboardInterrupt:
         pass
     except SystemExit as se:
