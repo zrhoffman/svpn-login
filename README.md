@@ -20,7 +20,7 @@ If you are on Linux, choose one of the following options depending on which dist
 ## Basic Usage (supports two-factor authentication):
 
 ```bash
-sudo ./svpn-login.py --sessionid=0123456789abcdef0123456789abcdef [host]
+./svpn-login.py --sessionid=0123456789abcdef0123456789abcdef [host]
 ```
 
 You can find the session ID by going to the VPN host in a web browser, logging in, and running this JavaScript in Developer Tools:
@@ -32,7 +32,7 @@ document.cookie.match(/MRHSession=(.*?); /)[1]
 If your organization does not use 2FA and you are able to log in with just your username and password:
 
 ```bash
-sudo ./svpn-login.py [user@host]
+./svpn-login.py [user@host]
 ```
 
 ## DNS and Routing
