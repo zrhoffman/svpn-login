@@ -141,7 +141,7 @@ class DarwinPlatform(Platform):
         else:
             raise Exception("Couldn't find ifconfig command")
 
-    def get_svpn_path(self) -> Union[str, None]:
+    def find_svpn(self) -> Union[str, None]:
         path = distutils.spawn.find_executable(SVPN_NAME)
         if path:
             return path
@@ -710,7 +710,7 @@ def keepalive(host: str, port: str):
 
 
 def execSVPN(svpn_path: str, query_string: str):
-    returncode = subprocess.run([svpn_path], shell=True, check=True, input=query_string.encode('utf-8'),
+    returncode = subprocess.run([svpn_path], check=True, input=query_string.encode('utf-8'),
                                 capture_output=True).returncode
     print('SVPN has exited with a status of %i.' % returncode)
 
