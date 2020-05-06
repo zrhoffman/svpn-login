@@ -13,8 +13,8 @@ If you are on Linux, choose one of the following options depending on which dist
 
 | Distro | Option |
 --- | ---
-| Ubuntu or Debian | https://[your-VPN-server]/public/download/linux_f5cli.x86_64.deb |
-|  CentOS/Red Hat | https://[your-VPN-server]/public/download/linux_f5cli.x86_64.rpm |
+| Ubuntu or Debian | https://[your-VPN-server]/public/download/linux_f5vpn.x86_64.deb |
+|  CentOS/Red Hat | https://[your-VPN-server]/public/download/linux_f5vpn.x86_64.rpm |
 |  Arch Linux | Install the [f5fpc](https://aur.archlinux.org/packages/f5fpc)<sup>AUR</sup> package |
 
 ## Basic Usage (supports two-factor authentication):
