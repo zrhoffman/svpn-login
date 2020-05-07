@@ -17,6 +17,7 @@ import threading
 from base64 import b16encode
 from platform import machine
 from ssl import wrap_socket
+from subprocess import PIPE
 from typing import Union
 
 import requests
@@ -710,7 +711,7 @@ def keepalive(host: str, port: str):
 
 def execSVPN(svpn_path: str, query_string: str):
     returncode = subprocess.run([svpn_path], check=True, input=query_string.encode('utf-8'),
-                                capture_output=True).returncode
+                                stdout=PIPE, stderr=PIPE).returncode
     print('SVPN has exited with a status of %i.' % returncode)
 
 
