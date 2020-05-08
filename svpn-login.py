@@ -904,6 +904,7 @@ def main(argv):
         has_connected = True
         if not (reconnect):
             break
+        params = None
         print('Restarting...')
 
 
