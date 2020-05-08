@@ -29,7 +29,7 @@ $ cd svpn-login
 ## Basic Usage (supports two-factor authentication):
 
 ```bash
-./svpn-login.py --sessionid=0123456789abcdef0123456789abcdef [no.protocol.but.fully.qualified.host.name]
+./svpn-login.py --sessionid=0123456789abcdef0123456789abcdef [hostname]
 ```
 
 You can find the session ID by going to the VPN host in a web browser, logging in, and running this JavaScript in Developer Tools:
