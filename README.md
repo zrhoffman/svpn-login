@@ -5,6 +5,8 @@ This project allows you to connect to an [F5 Networks](https://f5.com/) VPN serv
 
 ## Setup
 
+### Acquire svpn
+
 The script requires [`svpn`](https://support.f5.com/csp/article/K14947#SVPN), which is a component of the BIG-IP Edge Client. If you already have the BIG-IP Edge Client installed, then you already have `svpn`.
 
 Otherwise, if you are on macOS, you can get it by going to https://[your-VPN-server]/ in a web browser, clicking on "Edge Client - macOS", unzipping the file you downloaded, and running the installer that you unzipped.
@@ -17,10 +19,17 @@ If you are on Linux, choose one of the following options depending on which dist
 |  CentOS/Red Hat | https://[your-VPN-server]/public/download/linux_f5vpn.x86_64.rpm |
 |  Arch Linux | Install the [f5fpc](https://aur.archlinux.org/packages/f5fpc)<sup>AUR</sup> package |
 
+### Acquire svpn-login
+
+```
+$ git clone https://github.com/zrhoffman/svpn-login.git
+$ cd svpn-login
+```
+
 ## Basic Usage (supports two-factor authentication):
 
 ```bash
-./svpn-login.py --sessionid=0123456789abcdef0123456789abcdef [host]
+./svpn-login.py --sessionid=0123456789abcdef0123456789abcdef [hostname]
 ```
 
 You can find the session ID by going to the VPN host in a web browser, logging in, and running this JavaScript in Developer Tools:
