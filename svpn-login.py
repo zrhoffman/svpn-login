@@ -16,7 +16,6 @@ import subprocess
 import threading
 from base64 import b16encode
 from platform import machine
-from ssl import wrap_socket
 from subprocess import PIPE
 from typing import Union
 
@@ -424,7 +423,8 @@ def parse_hostport(host, default_port=0):
 def send_request(host, request):
     ip, port = parse_hostport(host, 443)
     s = proxy_connect(ip, port)
-    ssl_socket = wrap_socket(s)
+    context = ssl.SSLContext()
+    ssl_socket = context.wrap_socket(s, server_hostname=host)
     ssl_socket.write(request.encode('utf-8'))
     data = ''.encode('utf-8')
     while 1:
