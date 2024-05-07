@@ -16,7 +16,6 @@ import subprocess
 import threading
 from base64 import b16encode
 from platform import machine
-from ssl import wrap_socket
 from subprocess import PIPE
 from typing import Union
 
@@ -424,7 +423,8 @@ def parse_hostport(host, default_port=0):
 def send_request(host, request):
     ip, port = parse_hostport(host, 443)
     s = proxy_connect(ip, port)
-    ssl_socket = wrap_socket(s)
+    context = ssl.SSLContext()
+    ssl_socket = context.wrap_socket(s, server_hostname=host)
     ssl_socket.write(request.encode('utf-8'))
     data = ''.encode('utf-8')
     while 1:
@@ -458,11 +458,11 @@ Host: %(host)s\r
 \r
 """ % dict(host=host)
     result = send_request(host, request)
-    match = re.search('document.external_data_post_cls.client_data.value = \"([\w=]+)\"', result)
+    match = re.search(r'document.external_data_post_cls.client_data.value = \"([\w=]+)\"', result)
     if match:
         return match.group(1)
 
-    match = re.search('name="client_data" value="([\w=]+)"', result)
+    match = re.search(r'name="client_data" value="([\w=]+)"', result)
     if match:
         return match.group(1)
     return ''
@@ -549,7 +549,7 @@ Host: %(host)s\r
     for favxml in xmldoc.getElementsByTagName('favorite'):
         name = favxml.getElementsByTagName('name')[0].firstChild.wholeText
         favid = favxml.attributes['id'].value
-        z_matches = re.search('Z=(\S+,\S+)&', favid)
+        z_matches = re.search(r'Z=(\S+,\S+)&', favid)
         if z_matches is not None:
             favid = z_matches.group(1)
 
@@ -595,7 +595,7 @@ Host: %(host)s\r
     if not matches:
         # A new version of the server has switched to using javascript to write
         # the parameters, now, so try matching that too.
-        matches = list(re.finditer("document.writeln\('(version=[^)]*)'\)", result))
+        matches = list(re.finditer(r"document.writeln\('(version=[^)]*)'\)", result))
 
     if not matches:
         xml_match = re.search(pattern=r'<\?xml.*<favorite.*<object\s+ID="ur_Host".+?</favorite>', string=result,
