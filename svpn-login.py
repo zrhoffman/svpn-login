@@ -423,7 +423,7 @@ def parse_hostport(host, default_port=0):
 def send_request(host, request):
     ip, port = parse_hostport(host, 443)
     s = proxy_connect(ip, port)
-    context = ssl.SSLContext()
+    context = ssl.create_default_context()
     ssl_socket = context.wrap_socket(s, server_hostname=host)
     ssl_socket.write(request.encode('utf-8'))
     data = ''.encode('utf-8')
