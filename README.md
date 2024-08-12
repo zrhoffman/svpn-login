@@ -38,6 +38,8 @@ You can find the session ID by going to the VPN host in a web browser, logging i
 document.cookie.match(/MRHSession=(.*?); /)[1]
 ```
 
+Alternatively, use the [svpn-cookie-getter.user.js](https://github.com/zrhoffman/svpn-login/raw/master/svpn-cookie-getter.user.js) userscript with GreaseMonkey or TamperMonkey to get the cookie.
+
 If your organization does not use 2FA and you are able to log in with just your username and password:
 
 ```bash
