@@ -13,11 +13,14 @@ Otherwise, if you are on macOS, you can get it by going to https://[your-VPN-ser
 
 If you are on Linux, choose one of the following options depending on which distro you run.
 
-| Distro | Option |
---- | ---
+| OS               | Option |
+| ---------------- | ------ |
 | Ubuntu or Debian | https://[your-VPN-server]/public/download/linux_f5vpn.x86_64.deb |
-|  CentOS/Red Hat | https://[your-VPN-server]/public/download/linux_f5vpn.x86_64.rpm |
-|  Arch Linux | Install the [f5vpn](https://aur.archlinux.org/packages/f5vpn)<sup>AUR</sup> package |
+| Ubuntu or Debian (aarch64) | https://[your-VPN-server]/public/download/linux_f5vpn.aarch64.deb |
+| Fedora           | https://[your-VPN-server]/public/download/linux_f5vpn.x86_64.rpm |
+| Arch Linux       | Install the [f5vpn](https://aur.archlinux.org/packages/f5vpn)<sup>AUR</sup> package |
+| macOS            | https://[your-VPN-server]/public/download/mac_f5vpn.pkg |
+| Windows          | https://[your-VPN-server]/public/download/f5vpn_setup.exe |
 
 ### Acquire svpn-login
 
