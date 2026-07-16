@@ -703,7 +703,7 @@ def keepalive(host: str, port: str):
     try:
         while True:
             time.sleep(1)
-            if requests.get(keepalive_url).status_code != 200 and reconnect:
+            if requests.get(keepalive_url, timeout=50).status_code != 200 and reconnect:
                 break
     except Exception:
         print('Ending keepalive to %s' % keepalive_url)
