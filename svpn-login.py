@@ -225,7 +225,7 @@ class LinuxPlatform(Platform):
         path = shutil.which(SVPN_NAME)
         if path:
             return path
-        paths_to_check = ['/opt/f5/vpn/svpn', '/usr/local/lib/F5Networks/SSLVPN/svpn_' + machine(), './svpn']
+        paths_to_check = ['/opt/f5/vpn/svpn', '/usr/local/lib/F5Networks/SSLVPN/svpn_' + machine(), './svpn', '/usr/share/f5vpn-ng/svpn']
         return self.return_first_path(paths_to_check)
 
     def wait_for_interface(self, iface_name):
