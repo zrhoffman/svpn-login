@@ -32,6 +32,22 @@ $ cd svpn-login
 ## Basic Usage (supports two-factor authentication):
 
 ```bash
+./svpn-login.py [user@]host
+```
+
+The script walks through the server's logon pages in the terminal: it asks for your password,
+then for any further step the access policy requires (e.g. an SMS or token code), so no browser is needed.
+If `user@` is omitted you will be asked for the username.
+
+If the server lets you choose the authentication method (e.g. SMS or Token), you will be asked which one to use.
+To choose automatically, pass the option text, e.g. `--auth-method=SMS`.
+
+If a logon step is not handled correctly, run with `--debug-login`: every logon page is saved to a temporary
+directory so it can be inspected.
+
+If you already have a session (for example from a browser login), you can pass its ID instead:
+
+```bash
 ./svpn-login.py --sessionid=0123456789abcdef0123456789abcdef [hostname]
 ```
 
@@ -42,12 +58,6 @@ document.cookie.match(/MRHSession=(.*?); /)[1]
 ```
 
 Alternatively, use the [svpn-cookie-getter.user.js](https://github.com/zrhoffman/svpn-login/raw/master/svpn-cookie-getter.user.js) userscript with GreaseMonkey or TamperMonkey to get the cookie.
-
-If your organization does not use 2FA and you are able to log in with just your username and password:
-
-```bash
-./svpn-login.py [user@host]
-```
 
 ## DNS and Routing
 

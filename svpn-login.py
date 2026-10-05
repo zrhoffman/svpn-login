@@ -14,7 +14,10 @@ import string
 import ssl
 import subprocess
 import threading
+import urllib.parse
 from base64 import b16encode
+import html
+from html.parser import HTMLParser
 from platform import machine
 from subprocess import PIPE
 from typing import Union
@@ -32,6 +35,8 @@ SVPN_NAME = 'svpn'
 CONFIG_FILE = '~/.svpn-login.conf'
 
 proxy_addr = None
+
+debug_login_dir = None
 
 
 def set_non_blocking(fd):
@@ -439,82 +444,253 @@ def send_request(host, request):
     return data
 
 
-def get_vpn_client_data(host):
-    # Some FirePass servers are configured to redirect to an external "pre-login
-    # check" server.  This server is supposed to run some random additional
-    # checks to see if it likes you, and then redirects back to the firepass,
-    # with the client_data gunk as an extra POST variable.
+BROWSER_HEADERS = {
+    # The access policy hangs up on clients that do not look like a browser.
+    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+}
 
-    # If such an element is present, the firepass will refuse login unless we
-    # pass it through to the my.activation.php3 script. So, do so. Secureetay!
-
-    request = """GET /my.logon.php3?check=1 HTTP/1.0\r
-Accept: */*\r
-Accept-Language: en\r
-Cookie: uRoamTestCookie=TEST; VHOST=standard\r
-Referer: https://%(host)s/my.activation.php3\r
-User-Agent: Mozilla/5.0 (Macintosh; U; PPC Mac OS X; en) AppleWebKit/417.9 (KHTML, like Gecko) Safari/417.9.2\r
-Host: %(host)s\r
-\r
-""" % dict(host=host)
-    result = send_request(host, request)
-    match = re.search(r'document.external_data_post_cls.client_data.value = \"([\w=]+)\"', result)
-    if match:
-        return match.group(1)
-
-    match = re.search(r'name="client_data" value="([\w=]+)"', result)
-    if match:
-        return match.group(1)
-    return ''
+VOID_TAGS = ('input', 'br', 'img', 'meta', 'link', 'hr', 'col', 'area', 'base', 'wbr')
 
 
-def do_login(host, username, password, dpassword):
-    client_data = get_vpn_client_data(host)
+class LogonPageParser(HTMLParser):
+    """Collect the forms, field labels and messages of an APM logon page."""
 
-    body = "rsa_port=&vhost=standard&username=%(user)s&password=%(password)s&dpassword=%(dpassword)s&client_data=%(client_data)s&login=Logon&state=&mrhlogonform=1&miniui=1&tzoffsetmin=1&sessContentType=HTML&overpass=&lang=en&charset=iso-8859-1&uilang=en&uicharset=iso-8859-1&uilangchar=en.iso-8859-1&langswitcher=" % dict(
-        user=username, password=password, dpassword=dpassword, client_data=client_data)
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.forms = []
+        self.labels = {}
+        self.messages = []
+        self._form = None
+        self._select = None
+        self._option = None
+        self._button = None
+        self._label_for = None
+        self._label_text = ''
+        self._message_depth = 0
+        self._message_text = ''
+        self._depth = 0
 
-    request = """POST /my.activation.php3 HTTP/1.0\r
-Accept: */*\r
-Accept-Language: en\r
-Cookie: VHOST=standard; uRoamTestCookie=TEST\r
-Content-Type: application/x-www-form-urlencoded\r
-Referer: https://%(host)s/my.activation.php3\r
-User-Agent: Mozilla/5.0 (Macintosh; U; PPC Mac OS X; en) AppleWebKit/417.9 (KHTML, like Gecko) Safari/417.9.2\r
-Host: %(host)s\r
-Content-Length: %(len)d\r
-\r
-%(body)s
-""" % dict(host=host, len=len(body), body=body)
+    def handle_starttag(self, tag, attrs):
+        attrs = {k: (v or '') for k, v in attrs}
+        if tag not in VOID_TAGS:
+            self._depth += 1
+            if not self._message_depth and tag in ('div', 'span', 'td', 'p', 'font') and \
+                    re.search(r'error|message', attrs.get('class', '') + ' ' + attrs.get('id', ''), re.I):
+                self._message_depth = self._depth
+                self._message_text = ''
+        if tag == 'form':
+            self._form = {'attrs': attrs, 'fields': []}
+            self.forms.append(self._form)
+        elif tag == 'input' and self._form is not None:
+            self._form['fields'].append({
+                'tag': 'input', 'type': attrs.get('type', 'text').lower(), 'name': attrs.get('name', ''),
+                'value': attrs.get('value', ''), 'id': attrs.get('id', ''), 'checked': 'checked' in attrs})
+        elif tag == 'select' and self._form is not None:
+            self._select = {'tag': 'select', 'type': 'select', 'name': attrs.get('name', ''),
+                            'id': attrs.get('id', ''), 'options': []}
+            self._form['fields'].append(self._select)
+        elif tag == 'option' and self._select is not None:
+            self._option = {'value': attrs.get('value'), 'text': '', 'selected': 'selected' in attrs}
+            self._select['options'].append(self._option)
+        elif tag == 'button' and self._form is not None:
+            self._button = {'tag': 'button', 'type': attrs.get('type', 'submit').lower(), 'name': attrs.get('name', ''),
+                            'value': attrs.get('value', ''), 'id': attrs.get('id', ''), 'checked': False, 'text': ''}
+            self._form['fields'].append(self._button)
+        elif tag == 'label':
+            self._label_for = attrs.get('for', '')
+            self._label_text = ''
 
-    result = send_request(host, request)
+    def handle_endtag(self, tag):
+        if tag == 'form':
+            self._form = None
+        elif tag == 'select':
+            self._select = None
+        elif tag == 'option':
+            self._option = None
+        elif tag == 'button':
+            self._button = None
+        elif tag == 'label' and self._label_for is not None:
+            self.labels[self._label_for] = ' '.join(self._label_text.split())
+            self._label_for = None
+        if tag in VOID_TAGS:
+            return
+        if self._message_depth and self._depth == self._message_depth:
+            text = ' '.join(self._message_text.split())
+            if text:
+                self.messages.append(text)
+            self._message_depth = 0
+        self._depth -= 1
 
-    session = None
-    pat = re.compile('^Set-Cookie: MRHSession=([^;]*);', re.MULTILINE)
-    for match in pat.finditer(result):
-        sessid = match.group(1)
-        if sessid == "deleted":
-            session = None
-        else:
-            session = sessid
+    def handle_data(self, data):
+        if self._button is not None:
+            self._button['text'] += data
+        if self._option is not None:
+            self._option['text'] += data
+        if self._label_for is not None:
+            self._label_text += data
+        if self._message_depth:
+            self._message_text += data
 
-    if session is None:
-        if "Either Username or Password do not match!" in result:
-            sys.stderr.write("Wrong user or password, sorry.\n")
-            sys.exit(3)
-            return None
 
-        match = re.search("(Challenge: [^<]*)", result)
-        if match:
-            sys.stderr.write(match.group(1) + "\n")
-            return None
+def requests_proxies():
+    if proxy_addr is None:
+        return None
+    scheme = 'http' if proxy_addr[0] == 'http' else 'socks5h'
+    url = '%s://%s:%d' % (scheme, proxy_addr[1], proxy_addr[2])
+    return {'http': url, 'https': url}
 
-        sys.stderr.write("Login process failed, unknown output. Sorry!\n")
-        sys.stderr.write(result)
-        sys.stderr.write("\n")
-        sys.exit(1)
-    else:
-        return session
+
+def ask_field(field, label):
+    if field['type'] == 'select':
+        options = [o for o in field['options'] if o['value'] is not None]
+        if len(options) == 1:
+            return options[0]['value']
+        print(label or field['name'])
+        for i, option in enumerate(options):
+            print('%d) %s' % (i, ' '.join(option['text'].split())))
+        while True:
+            choice = input('> ')
+            if choice.isdigit() and int(choice) < len(options):
+                return options[int(choice)]['value']
+    prompt = '%s: ' % (label or field['name'])
+    if field['type'] == 'password':
+        return getpass.getpass(prompt)
+    return input(prompt)
+
+
+def choose(title, fields, labels, default=None):
+    """Let the user pick one of several radio buttons or submit buttons."""
+    print(title)
+    for i, field in enumerate(fields):
+        text = labels.get(field['id']) or ' '.join(field.get('text', '').split()) or field['value'] or field['name']
+        print('%d) %s%s' % (i, text, ' (default)' if field is default else ''))
+    while True:
+        answer = input('> ').strip()
+        if answer == '' and default is not None:
+            return default
+        if answer.isdigit() and int(answer) < len(fields):
+            return fields[int(answer)]
+
+
+def page_text(html):
+    return ' '.join(re.sub(r'(?s)<(script|style).*?</\1>|<[^>]+>', ' ', html).split())
+
+
+def do_login(host, username=None, auth_method=None):
+    """Walk through the access policy logon pages (username/password, then
+    SMS/OTP or any other prompt the server shows) and return the MRHSession."""
+    base = 'https://%s' % host
+    s = requests.Session()
+    s.headers.update(BROWSER_HEADERS)
+    proxies = requests_proxies()
+    if proxies:
+        s.proxies.update(proxies)
+
+    # Let CTRL-C abort the prompts even though trap_signals() swallows SIGINT.
+    old_handler = signal.signal(signal.SIGINT, signal.default_int_handler)
+    try:
+        r = s.get(base + '/', timeout=30)
+        shown_messages = set()
+        step = 0
+        for _ in range(30):
+            path = urllib.parse.urlparse(r.url).path
+            if path.startswith('/vdesk/') and 'hangup' not in path:
+                return s.cookies.get('MRHSession')
+            if 'hangup' in path or 'logout' in path:
+                sys.stderr.write('Login failed: %s\n' % page_text(r.text)[:500])
+                return None
+
+            if debug_login_dir:
+                step += 1
+                dump = os.path.join(debug_login_dir, 'step%d.html' % step)
+                with open(dump, 'w') as f:
+                    f.write('<!-- %s -->\n%s' % (r.url, r.text))
+                print('[debug] saved %s' % dump)
+
+            # Message and decision boxes: each link calls SubmitResult(n), which
+            # posts choice=n through hidden_form using JavaScript.
+            options = re.findall(r'<a[^>]+SubmitResult\((\d+)\)[^>]*>([^<]+)</a>', r.text)
+            if options and 'id="hidden_form"' in r.text:
+                header = re.search(r'id="interaction_table_header"[^>]*>(.*?)</td>', r.text, re.S)
+                if header and page_text(header.group(1)):
+                    print(html.unescape(page_text(header.group(1))))
+                options = [{'id': '', 'name': '', 'value': value, 'text': html.unescape(text.strip())}
+                           for value, text in options]
+                option = options[0]
+                if len(options) > 1:
+                    wanted = [o for o in options if auth_method and o['text'].lower() == auth_method.lower()]
+                    option = wanted[0] if wanted else choose('Choose:', options, {})
+                    print('Selected %s' % option['text'])
+                r = s.post(r.url, data=[('choice', option['value'])], timeout=60)
+                continue
+
+            page = LogonPageParser()
+            page.feed(r.text)
+            for message in page.messages:
+                if message not in shown_messages:
+                    print(message)
+                    shown_messages.add(message)
+            forms = [f for f in page.forms if f['attrs'].get('id') == 'auth_form'] or \
+                    [f for f in page.forms if f['attrs'].get('method', '').lower() == 'post']
+            if not forms:
+                refresh = re.search(r'<meta[^>]+http-equiv=["\']?refresh["\']?[^>]+url=([^"\'>]+)', r.text, re.I)
+                if refresh:
+                    r = s.get(urllib.parse.urljoin(r.url, refresh.group(1).strip()), timeout=30)
+                    continue
+                sys.stderr.write('Login process failed, unexpected page at %s:\n%s\n' % (r.url, page_text(r.text)[:500]))
+                return None
+
+            form = forms[0]
+            data = []
+            radios_done = set()
+            for field in form['fields']:
+                name, ftype = field['name'], field['type']
+                if not name or ftype in ('submit', 'button', 'reset', 'image'):
+                    continue
+                if ftype == 'radio':
+                    if name in radios_done:
+                        continue
+                    radios_done.add(name)
+                    group = [f for f in form['fields'] if f['type'] == 'radio' and f['name'] == name]
+                    choice = next((f for f in group if f['checked']), None)
+                    if len(group) > 1:
+                        choice = choose(name, group, page.labels, choice)
+                    if choice is not None:
+                        data.append((name, choice['value'] or 'on'))
+                elif ftype == 'checkbox':
+                    if field['checked']:
+                        data.append((name, field['value'] or 'on'))
+                elif ftype == 'hidden':
+                    data.append((name, field['value']))
+                elif name == 'username' and ftype == 'text':
+                    if username is None:
+                        username = input('Username for %s: ' % host)
+                    data.append((name, username))
+                elif field['tag'] == 'input' and field['value'] and ftype != 'password':
+                    data.append((name, field['value']))
+                else:
+                    label = page.labels.get(field['id'], '')
+                    if name == 'password':
+                        label = '%s for %s@%s' % (label or 'Password', username, host)
+                    data.append((name, ask_field(field, label)))
+
+            # A form may offer several buttons (e.g. "Send SMS" / "Use token"); the
+            # server only learns which one was pressed from its name=value pair.
+            buttons = [f for f in form['fields'] if f['type'] in ('submit', 'image') and f['name']]
+            if len(buttons) > 1:
+                button = choose('Which button to press?', buttons, page.labels)
+                data.append((button['name'], button['value']))
+            elif buttons:
+                data.append((buttons[0]['name'], buttons[0]['value']))
+
+            action = urllib.parse.urljoin(r.url, form['attrs'].get('action') or r.url)
+            r = s.post(action, data=data, timeout=60)
+        sys.stderr.write('Login process failed, too many logon steps.\n')
+        return None
+    finally:
+        signal.signal(signal.SIGINT, old_handler)
 
 
 def get_vpn_menu_number(host, session):
@@ -717,7 +893,7 @@ def execSVPN(svpn_path: str, query_string: str):
 
 def usage(exename, s):
     print(
-        "Usage: %s [--skip-dns] [--skip-routes] [--sessionid=sessionid] [--{http,socks5}-proxy=host:port] [[user@]host]" % exename)
+        "Usage: %s [--skip-dns] [--skip-routes] [--sessionid=sessionid] [--auth-method=SMS|Token] [--debug-login] [--{http,socks5}-proxy=host:port] [[user@]host]" % exename)
 
 
 def need_svpn(exename):
@@ -767,7 +943,7 @@ def trap_signals():
 
 
 def main(argv):
-    global proxy_addr
+    global proxy_addr, debug_login_dir
     svpn_path = platform.find_svpn()
     if svpn_path is None:
         need_svpn(argv[0])
@@ -789,7 +965,8 @@ def main(argv):
     user = getpass.getuser()
 
     opts, args = getopt.getopt(argv[1:], "",
-                               ['http-proxy=', 'sessionid=', 'reconnect=', 'socks5-proxy=', 'skip-routes', 'skip-dns'])
+                               ['http-proxy=', 'sessionid=', 'reconnect=', 'socks5-proxy=', 'skip-routes', 'skip-dns',
+                                'debug-login', 'auth-method='])
 
     if len(args) > 1:
         usage(argv[0], sys.stderr)
@@ -814,8 +991,11 @@ def main(argv):
         sys.stderr.write("The host argument must be provided the first time.\n")
         sys.exit(1)
 
+    login_user = None
+    auth_method = None
     if '@' in userhost:
         user, host = userhost.split('@')
+        login_user = user
     else:
         host = userhost
 
@@ -836,6 +1016,11 @@ def main(argv):
             skip_routes = True
         elif opt in ('--sessionid'):
             session = val
+        elif opt == '--auth-method':
+            auth_method = val
+        elif opt == '--debug-login':
+            import tempfile
+            debug_login_dir = tempfile.mkdtemp(prefix='svpn-login-')
         elif opt in ('--reconnect'):
             reconnect = str(val).lower()[0] not in ('f', 'n', 0)
         else:
@@ -855,13 +1040,11 @@ def main(argv):
     trap_signals()
     while True:
         if params is None:
-            while session is None:
-                password = getpass.getpass("radius password for %s@%s? " % (user, host))
-                dpassword = getpass.getpass("lan password for %s@%s? " % (user, host))
-                session = do_login(host, user, password, dpassword)
-                if session is not None:
-                    print("Session id gotten:", session)
-                    break
+            if session is None:
+                session = do_login(host, login_user, auth_method)
+                if session is None:
+                    sys.exit(3)
+                print("Session id gotten:", session)
 
             print("Getting params...")
             menu_number = get_vpn_menu_number(host, session)
